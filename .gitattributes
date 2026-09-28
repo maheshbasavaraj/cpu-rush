@@ -1,0 +1,6 @@
+# Normalize line endings — repo content is LF, Windows checkouts get LF too
+# so diffs stop churning between machines.
+* text=auto eol=lf
+*.png binary
+*.jpg binary
+*.ico binary

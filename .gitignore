@@ -1,0 +1,41 @@
+# ── Dependencies ────────────────────────────────────────────────
+node_modules/
+package-lock.json
+
+# ── Runtime / user data ─────────────────────────────────────────
+# Leaderboard + XP storage written by server.js at runtime.
+# Do not version: per-machine scores, churns every session.
+scores.json
+
+# ── Git worktrees (local, machine-specific) ─────────────────────
+.worktrees/
+
+# ── Secrets & config ────────────────────────────────────────────
+.env
+.env.*
+*.pem
+*.key
+credentials.json
+
+# ── Logs ────────────────────────────────────────────────────────
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# ── OS junk ─────────────────────────────────────────────────────
+.DS_Store
+Thumbs.db
+desktop.ini
+ehthumbs.db
+
+# ── Editors ─────────────────────────────────────────────────────
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# ── OneDrive sync artifacts ─────────────────────────────────────
+*.conflict
+*.tmp
+~$*

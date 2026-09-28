@@ -1,0 +1,365 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>CPU RUSH — The Scheduler</title><link rel="stylesheet" href="style.css"></head><body>
+<a href="#" id="home-btn" class="home-btn" title="Back to home">⌂ HOME</a>
+<main>
+<section id="welcome" class="panel welcome"><p class="eyebrow">OPERATING SYSTEMS // MISSION 01</p><h1>CPU <span>RUSH</span></h1><p class="tagline">Become the Scheduler. Beat the Clock. Rule the CPU.</p>
+<div class="xp-wrap" id="xp-display">
+  <span class="xp-rank" id="xp-rank">🥚 INTERN</span>
+  <div class="xp-bar"><div class="xp-fill" id="xp-fill" style="width:0%"></div></div>
+  <span class="xp-num" id="xp-num">0 XP</span>
+</div>
+<form id="player-form">
+  <label>Name<input required name="name" maxlength="30" placeholder="Your name"></label>
+  <label>USN<input required name="usn" maxlength="30" placeholder="e.g. 1DS23CS001"></label>
+  <div class="mission-select">
+    <label>Mode
+      <select name="mode" id="mode-select">
+        <option value="">— Select game type —</option>
+        <option value="scheduler">CPU Scheduling</option>
+        <option value="memory">Memory Management (Page Replacement)</option>
+        <option value="disk">Disk Scheduling</option>
+        <option value="alloc">Memory Allocation (Holes)</option>
+        <option value="deadlock">Deadlock Management (Banker's)</option>
+        <option value="vm">Virtual Memory / Demand Paging</option>
+        <option value="fs">File System Allocation</option>
+      </select>
+    </label>
+  </div>
+  <div class="mission-select" id="algo-select-container" hidden>
+    <label>Algorithm
+      <select name="algorithm" id="algo-select">
+        <option value="fcfs">First-Come-First-Served (FCFS)</option>
+        <option value="sjf">Shortest Job First (SJF)</option>
+        <option value="rr">Round Robin (RR, q=3)</option>
+        <option value="priority">Priority Scheduling</option>
+      </select>
+    </label>
+  </div>
+  <div class="mission-select" id="memory-algo-container" hidden>
+    <label>Algorithm
+      <select name="mem-algo" id="memory-algo-select">
+        <option value="fifo">FIFO (First-In-First-Out)</option>
+        <option value="lru">LRU (Least Recently Used)</option>
+        <option value="optimal">Optimal (Belady's)</option>
+        <option value="clock">Clock (Second Chance)</option>
+      </select>
+    </label>
+  </div>
+  <div class="mission-select" id="disk-algo-container" hidden>
+    <label>Algorithm
+      <select name="disk-algo" id="disk-algo-select">
+        <option value="fcfs">FCFS (First-Come-First-Served)</option>
+        <option value="sstf">SSTF (Shortest Seek Time First)</option>
+        <option value="scan">SCAN (Elevator)</option>
+      </select>
+    </label>
+  </div>
+  <div class="mission-select" id="alloc-algo-container" hidden>
+    <label>Strategy
+      <select name="alloc-algo" id="alloc-algo-select">
+        <option value="first">First Fit</option>
+        <option value="best">Best Fit</option>
+        <option value="worst">Worst Fit</option>
+      </select>
+    </label>
+  </div>
+  <div class="mission-select" id="deadlock-algo-container" hidden>
+    <label>Approach
+      <select name="deadlock-algo" id="deadlock-algo-select">
+        <option value="avoidance">Deadlock Avoidance (Banker's)</option>
+      </select>
+    </label>
+  </div>
+  <div class="mission-select" id="vm-algo-container" hidden>
+    <label>Policy
+      <select name="vm-algo" id="vm-algo-select">
+        <option value="fifo">Demand Paging (FIFO)</option>
+      </select>
+    </label>
+  </div>
+  <div class="mission-select" id="fs-algo-container" hidden>
+    <label>Allocation Method
+      <select name="fs-algo" id="fs-algo-select">
+        <option value="contiguous">Contiguous Allocation</option>
+        <option value="linked">Linked Allocation</option>
+        <option value="indexed">Indexed Allocation</option>
+      </select>
+    </label>
+  </div>
+  <button>START MISSION <b>→</b></button>
+</form>
+<small class="algo-desc" id="algo-desc">Select a game mode to choose your algorithm.</small>
+<div class="kbd-hints" id="welcome-kbd"></div>
+</section>
+
+<section id="game" hidden>
+<header>
+  <div class="brand">CPU <i>RUSH</i><small id="mission-label">FIRST SHIFT · FCFS</small></div>
+  <div class="stat">SCORE <strong id="score">0</strong></div>
+  <div class="stat">COMBO <strong id="combo">×1</strong></div>
+  <div class="stat">TIME <strong id="timer">00:00</strong></div>
+  <button class="mute-btn" id="mute-toggle" title="Sound on/off">🔊</button>
+</header>
+<div class="notice" id="notice">Select the process that arrived first, then deploy it to the CPU.</div>
+<section class="core panel">
+  <div class="cpu-glow"></div>
+  <p>CPU CORE</p>
+  <div id="cpu" class="cpu" aria-label="CPU drop zone">IDLE <em>⚡</em></div>
+  <div class="stability"><span>SYSTEM STABILITY</span><div><b id="stability"></b></div><strong id="stability-text">100%</strong></div>
+</section>
+<div class="grid">
+  <section class="panel queue">
+    <div class="section-title">READY QUEUE <small id="clock">SYSTEM TIME 0</small></div>
+    <div id="cards" class="cards"></div>
+    <p class="kbd-hints">Keys: <span class="kbd">1</span>-<span class="kbd">9</span> pick · <span class="kbd">D</span> deploy · <span class="kbd">H</span> hint</p>
+  </section>
+  <aside class="panel status">
+    <div class="section-title">SYSTEM STATUS</div>
+    <p>CPU Usage <b id="usage">100%</b></p>
+    <p>Avg Wait <b id="wait">0.0</b></p>
+    <p>Context <b id="context">0</b></p>
+    <p>Accuracy <b id="accuracy">—</b></p>
+    <button class="hint" id="hint">🧠 HINT <small>−75 points</small></button>
+  </aside>
+</div>
+<section class="panel timeline">
+  <div class="section-title">GANTT TIMELINE</div>
+  <div id="gantt"></div>
+</section>
+</section>
+
+<!-- MEMORY MANAGEMENT GAME SECTION -->
+<section id="memory-game" hidden>
+<header>
+  <div class="brand">CPU <i>RUSH</i><small id="memory-mission-label">MEMORY SHIFT 1 · FIFO</small></div>
+  <div class="stat">SCORE <strong id="memory-score">0</strong></div>
+  <div class="stat">STREAK <strong id="memory-streak">0</strong></div>
+  <div class="stat">TIME <strong id="memory-timer">00:00</strong></div>
+  <button class="mute-btn" id="mute-toggle-mem" title="Sound on/off">🔊</button>
+</header>
+
+<div class="notice" id="memory-notice">Step 1: Page <strong id="current-ref">1</strong> is referenced. <span class="instruction">Choose your prediction when the controls appear.</span></div>
+<div class="kbd-hints memory-controls" id="memory-controls">Controls: <span class="kbd">H</span> HIT · <span class="kbd">M</span> MISS · <span class="kbd">←</span><span class="kbd">→</span> choose victim · <span class="kbd">1</span>-<span class="kbd">9</span> choose frame · <span class="kbd">Enter</span> submit · <span class="kbd">U</span> hint</div>
+
+<div class="grid compact">
+  <!-- LEFT COLUMN: prediction + frames -->
+  <div class="panel stack">
+    <div class="panel predictions compact">
+      <div class="section-title">PREDICTION</div>
+      <div id="predict-step1" class="predict-step active">
+        <div class="prediction-buttons">
+          <button class="pred-btn hit large" data-pred="hit"><span class="btn-icon">✓</span><span class="btn-label">HIT</span></button>
+          <button class="pred-btn miss large" data-pred="miss"><span class="btn-icon">✗</span><span class="btn-label">MISS</span></button>
+        </div>
+      </div>
+      <div id="predict-step2" class="predict-step" hidden>
+        <p class="step2-prompt">Frames FULL — which page gets <strong>EVICTED</strong>?</p>
+        <div class="victim-grid" id="victim-grid"></div>
+        <button id="submit-prediction" class="submit-btn" disabled>SUBMIT</button>
+      </div>
+      <div id="predict-result" class="predict-result" hidden></div>
+    </div>
+
+    <div class="panel">
+      <div class="section-title">FRAMES <small id="memory-frames">4 FRAMES</small> · FAULTS <b id="memory-faults">0</b></div>
+      <div id="frames" class="frames"></div>
+      <button class="hint" id="memory-hint">💡 HINT <small>−50</small></button>
+    </div>
+  </div>
+
+  <!-- RIGHT COLUMN: ref string + page table + log -->
+  <div class="panel stack">
+    <div class="panel">
+      <div class="section-title">REFERENCE STRING <small id="memory-pos">STEP 1 / 20</small></div>
+      <div id="ref-string" class="ref-string"></div>
+    </div>
+
+    <div class="panel">
+      <div class="section-title">PAGE TABLE</div>
+      <div id="page-table" class="page-table"></div>
+    </div>
+
+    <div class="panel timeline compact">
+      <div class="section-title">LOG</div>
+      <div id="memory-log" class="memory-log"></div>
+    </div>
+  </div>
+</div>
+</section>
+
+<!-- DISK SCHEDULING GAME SECTION -->
+<section id="disk-game" hidden>
+<header>
+  <div class="brand">CPU <i>RUSH</i><small id="disk-mission-label">DISK SHIFT 1 · FCFS</small></div>
+  <div class="stat">SCORE <strong id="disk-score">0</strong></div>
+  <div class="stat">SEEK <strong id="disk-seek">0</strong></div>
+  <div class="stat">TIME <strong id="disk-timer">00:00</strong></div>
+  <button class="mute-btn" data-mute title="Sound on/off">🔊</button>
+</header>
+<div class="notice" id="disk-notice">Pick the next track the disk head services.</div>
+
+<div class="grid compact">
+  <section class="panel queue">
+    <div class="section-title">DISK TRACKS <small id="disk-progress">NEXT: 0/8</small></div>
+    <div id="disk-track-strip" class="track-strip"></div>
+    <p class="kbd-hints">Keys: <span class="kbd">←</span><span class="kbd">→</span> move · <span class="kbd">Enter</span> pick</p>
+  </section>
+  <aside class="panel status">
+    <div class="section-title">YOUR ORDER</div>
+    <div id="disk-my-order" class="my-order"></div>
+    <p>Head at: <b id="disk-head-pos">—</b></p>
+    <p>Seek so far: <b id="disk-seek-so-far">0</b></p>
+    <button class="hint" id="disk-hint">💡 HINT <small>−60 pts</small></button>
+    <button id="disk-reset" style="margin-top:8px">↺ RESET</button>
+  </aside>
+</div>
+<div class="panel predictions">
+  <button id="disk-submit" class="submit-btn">SUBMIT ORDER</button>
+  <div id="disk-result" class="predict-result" hidden></div>
+</div>
+<section class="panel timeline compact">
+  <div class="section-title">SERVICE PATH</div>
+  <div id="disk-path"></div>
+</section>
+</section>
+
+<!-- MEMORY ALLOCATION GAME SECTION -->
+<section id="alloc-game" hidden>
+<header>
+  <div class="brand">CPU <i>RUSH</i><small id="alloc-mission-label">ALLOC SHIFT 1 · FIRST FIT</small></div>
+  <div class="stat">SCORE <strong id="alloc-score">0</strong></div>
+  <div class="stat">STREAK <strong id="alloc-streak">0</strong></div>
+  <div class="stat">TIME <strong id="alloc-timer">00:00</strong></div>
+  <button class="mute-btn" data-mute title="Sound on/off">🔊</button>
+</header>
+<div class="notice" id="alloc-notice"></div>
+
+<div class="grid compact">
+  <section class="panel queue">
+    <div class="section-title">MEMORY HOLES <small>← → pick · Enter confirm</small></div>
+    <div id="alloc-holes" class="alloc-holes"></div>
+  </section>
+  <aside class="panel status">
+    <div class="section-title">REQUEST QUEUE</div>
+    <div id="alloc-reqs" class="alloc-reqs"></div>
+    <p>Current: <b id="alloc-cur">—</b> KB</p>
+    <button class="hint" id="alloc-hint">💡 HINT <small>−40 pts</small></button>
+    <button id="alloc-confirm" class="submit-btn" style="margin-top:8px">CONFIRM</button>
+    <button id="alloc-skip" style="margin-top:8px">⏭ SKIP</button>
+  </aside>
+</div>
+<div class="panel predictions">
+  <div id="alloc-feedback" class="predict-result" hidden></div>
+</div>
+<section class="panel timeline compact">
+  <div class="section-title">ALLOCATION MAP</div>
+  <div id="alloc-map"></div>
+</section>
+</section>
+
+<!-- DEADLOCK MANAGEMENT GAME -->
+<section id="deadlock-game" hidden>
+<header>
+  <div class="brand">CPU <i>RUSH</i><small id="dl-mission-label">DEADLOCK SHIFT 1 · BANKER'S</small></div>
+  <div class="stat">SCORE <strong id="dl-score">0</strong></div>
+  <div class="stat">STREAK <strong id="dl-streak">0</strong></div>
+  <div class="stat">TIME <strong id="dl-timer">00:00</strong></div>
+  <button class="mute-btn" data-mute title="Sound on/off">🔊</button>
+</header>
+<div class="notice" id="dl-notice">A process requests resources. Grant it only if the state stays SAFE.</div>
+
+<div class="grid compact">
+  <section class="panel queue">
+    <div class="section-title">RESOURCE STATE</div>
+    <div id="dl-state" class="dl-state"></div>
+  </section>
+  <aside class="panel status">
+    <div class="section-title">INCOMING REQUEST</div>
+    <div id="dl-request" class="dl-request"></div>
+    <div class="dl-actions">
+      <button id="dl-grant" class="submit-btn">✓ GRANT</button>
+      <button id="dl-deny" class="submit-btn deny">✗ DENY</button>
+    </div>
+    <button class="hint" id="dl-hint">💡 HINT <small>−40 pts</small></button>
+    <div id="dl-feedback" class="predict-result" hidden></div>
+  </aside>
+</div>
+<section class="panel timeline compact">
+  <div class="section-title">SAFE SEQUENCE LOG</div>
+  <div id="dl-log"></div>
+</section>
+</section>
+
+<!-- VIRTUAL MEMORY / DEMAND PAGING GAME -->
+<section id="vm-game" hidden>
+<header>
+  <div class="brand">CPU <i>RUSH</i><small id="vm-mission-label">VM SHIFT 1 · DEMAND PAGING</small></div>
+  <div class="stat">SCORE <strong id="vm-score">0</strong></div>
+  <div class="stat">FAULTS <strong id="vm-faults">0</strong></div>
+  <div class="stat">TIME <strong id="vm-timer">00:00</strong></div>
+  <button class="mute-btn" data-mute title="Sound on/off">🔊</button>
+</header>
+<div class="notice" id="vm-notice">Each reference: is it a HIT, or a fault (PURE / COW / PROT)?</div>
+
+<div class="grid compact">
+  <section class="panel queue">
+    <div class="section-title">PAGE FRAMES</div>
+    <div id="vm-frames" class="vm-frames"></div>
+    <div class="section-title" style="margin-top:12px">REFERENCE STREAM</div>
+    <div id="vm-refs" class="vm-refs"></div>
+  </section>
+  <aside class="panel status">
+    <div class="section-title">CURRENT REFERENCE</div>
+    <div id="vm-current" class="vm-current"></div>
+    <div class="vm-choices" id="vm-choices"></div>
+    <button class="hint" id="vm-hint">💡 HINT <small>−40 pts</small></button>
+    <div id="vm-feedback" class="predict-result" hidden></div>
+  </aside>
+</div>
+<section class="panel timeline compact">
+  <div class="section-title">PAGE FAULT LOG</div>
+  <div id="vm-log"></div>
+</section>
+</section>
+
+<!-- FILE SYSTEM ALLOCATION GAME -->
+<section id="fs-game" hidden>
+<header>
+  <div class="brand">CPU <i>RUSH</i><small id="fs-mission-label">FILE SHIFT 1 · CONTIGUOUS</small></div>
+  <div class="stat">SCORE <strong id="fs-score">0</strong></div>
+  <div class="stat">FILE <strong id="fs-progress">0/0</strong></div>
+  <div class="stat">TIME <strong id="fs-timer">00:00</strong></div>
+  <button class="mute-btn" data-mute title="Sound on/off">🔊</button>
+</header>
+<div class="notice" id="fs-notice">Click disk blocks to allocate this file, then confirm.</div>
+
+<div class="grid compact">
+  <section class="panel queue">
+    <div class="section-title">DISK BLOCKS <small>click to select</small></div>
+    <div id="fs-disk" class="fs-disk"></div>
+  </section>
+  <aside class="panel status">
+    <div class="section-title">FILE QUEUE</div>
+    <div id="fs-files" class="fs-files"></div>
+    <p>Selected: <b id="fs-selected">—</b></p>
+    <button id="fs-confirm" class="submit-btn">CONFIRM</button>
+    <button id="fs-clear" style="margin-top:8px">↺ CLEAR</button>
+    <button class="hint" id="fs-hint">💡 HINT <small>−40 pts</small></button>
+    <div id="fs-feedback" class="predict-result" hidden></div>
+  </aside>
+</div>
+<section class="panel timeline compact">
+  <div class="section-title">ALLOCATION LOG</div>
+  <div id="fs-log"></div>
+</section>
+</section>
+
+<section id="result" class="panel result" hidden></section>
+<section class="panel leaderboard" id="leaderboard-panel">
+  <div class="section-title">🏆 LIVE LEADERBOARD <button id="refresh">REFRESH</button></div>
+  <ol id="board"></ol>
+</section>
+<section class="panel ach-shelf">
+  <div class="section-title">🎖️ ACHIEVEMENTS</div>
+  <div class="ach-grid" id="ach-grid"></div>
+</section>
+</main><script src="audio.js"></script><script src="algos.js"></script><script src="app.js"></script></body></html>
