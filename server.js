@@ -2,7 +2,7 @@ const http = require('node:http');
 const fs = require('node:fs');
 const path = require('node:path');
 const { randomUUID } = require('node:crypto');
-const { bankersRequest, demandPagingSim, fileAllocSim } = require('./public/algos.js');
+const { bankersRequest, demandPagingSim, fileAllocSim, fsPlacementOk, syncSim } = require('./public/algos.js');
 
 const port = process.env.PORT || 3000;
 const publicDir = path.join(__dirname, 'public');
@@ -394,35 +394,138 @@ function generateDeadlockPuzzle() {
 function generateVmPuzzle(level) {
   const frames = 3 + Math.min(2, level - 1);
   const maxPage = 8;
-  const refs = Array.from({ length: 16 }, () => Math.floor(Math.random() * maxPage));
+  // ~15% of references address a page outside the process's valid range, so the
+  // PROTECTION FAULT choice is a live answer instead of decoration (the old
+  // generator only ever produced pages 0..maxPage-1, so PROT never came up).
+  const refs = Array.from({ length: 16 }, () => (
+    Math.random() < 0.15
+      ? maxPage + 1 + Math.floor(Math.random() * 2)
+      : Math.floor(Math.random() * maxPage)
+  ));
   const access = refs.map(() => (Math.random() < 0.35 ? 'W' : 'R'));
-  const shared = [refs[Math.floor(Math.random() * refs.length)]];
+  // Two distinct shared pages (drawn from the legal references) so COPY-ON-WRITE
+  // can come up more than once in a run.
+  const legalRefs = refs.filter(p => p < maxPage);
+  const sharedSet = new Set();
+  if (legalRefs.length) {
+    for (let k = 0; k < 2; k++) sharedSet.add(legalRefs[Math.floor(Math.random() * legalRefs.length)]);
+  }
+  const shared = [...sharedSet];
   return { frames, maxPage, refs, access, shared };
 }
 
-let strategyForPuzzle = 'indexed';
-
-function generateFsPuzzle() {
+function generateFsPuzzle(strategy = 'indexed') {
   const diskSize = 24;
   const fileCount = 4;
   const files = Array.from({ length: fileCount }, (_, i) => ({
-    id: i + 1, size: 2 + Math.floor(Math.random() * 4)
+    id: i + 1, size: 2 + Math.floor(Math.random() * 3)
   }));
-  // Indexed needs size+1 blocks per file; contiguous needs a run that long.
-  // Cap total demand so every generated puzzle is actually solvable.
-  const strategy = strategyForPuzzle || 'indexed';
-  const overhead = strategy === 'indexed' ? fileCount : 0;
-  const demand = files.reduce((n, f) => n + f.size, 0) + overhead;
-  const maxUsed = Math.max(0, diskSize - demand - 2);
-  const disk = Array(diskSize).fill(true);
-  const usedCount = Math.min(4 + Math.floor(Math.random() * 3), maxUsed);
-  for (let k = 0; k < usedCount; k++) {
-    disk[Math.floor(Math.random() * diskSize)] = false;
+  const need = f => (strategy === 'indexed' ? f.size + 1 : f.size);
+  const totalNeed = files.reduce((n, f) => n + need(f), 0);   // <= 16 of 24 blocks
+  const usedTarget = Math.max(1, Math.min(4 + Math.floor(Math.random() * 3), diskSize - totalNeed - 1));
+  // Scatter some used blocks, then require that plain first-fit — the rule the
+  // in-game hint teaches — still places every file in order. If it cannot, the
+  // layout is reshuffled. This is what makes the puzzle both fragmented (a real
+  // disk) and impossible to strand a player who follows the hint, and it means
+  // at least one legal placement always exists for every file.
+  for (let attempt = 0; attempt < 400; attempt++) {
+    const disk = Array(diskSize).fill(true);
+    for (let k = 0; k < usedTarget; k++) disk[Math.floor(Math.random() * diskSize)] = false;
+    const probe = disk.map(Boolean);
+    let ok = true;
+    for (const f of files) {
+      const step = fileAllocSim(probe, [f], strategy).steps[0];
+      if (!step || !step.blocks) { ok = false; break; }
+      step.blocks.forEach(b => { probe[b] = false; });
+    }
+    if (ok) return { diskSize, disk, files };
+  }
+  // Fallback (first-fit always succeeds here): pack the files in order, rest used.
+  const disk = Array(diskSize).fill(false);
+  let pos = 0;
+  for (const f of files) {
+    const k = need(f);
+    for (let d = 0; d < k; d++) disk[pos + d] = true;
+    pos += k;
   }
   return { diskSize, disk, files };
 }
 
-function send(res, status, body, type = 'application/json') { res.writeHead(status, { 'Content-Type': type }); res.end(type === 'application/json' ? JSON.stringify(body) : body); }
+function generateSyncPuzzle(algorithm) {
+  const known = ['critical', 'peterson', 'hardware', 'mutex', 'semaphore'];
+  const algo = known.indexOf(algorithm) >= 0 ? algorithm : 'critical';
+  const pick = (n) => Math.floor(Math.random() * n);
+  for (let attempt = 0; attempt < 300; attempt++) {
+    let puzzle;
+    if (algo === 'critical') {
+      const ops = ['enter', 'exit', 'work', 'work'];
+      const events = [];
+      for (let i = 0; i < 8; i++) events.push({ p: pick(2), op: ops[pick(ops.length)] });
+      puzzle = { events };
+    } else if (algo === 'peterson') {
+      const prog = ['flagT', 'turn', 'check', 'cs', 'flagF', 'rem'];
+      const pc = [0, 0], flag = [false, false];
+      let turn = null;
+      const schedule = [];
+      let guard = 0;
+      while (schedule.length < 44 && guard++ < 700) {
+        const p = pick(2), o = 1 - p;
+        const ins = prog[pc[p]];
+        const blocked = ins === 'check' && flag[o] && turn === o;
+        // Record the check either way: a process that finds the loop condition
+        // true is spinning, and that is exactly the case worth asking about.
+        // Only a process that got through advances to its next instruction.
+        const last = schedule[schedule.length - 1];
+        if (!(blocked && last && last.p === p && last.ins === 'check')) schedule.push({ p, ins });
+        if (ins === 'flagT') flag[p] = true;
+        else if (ins === 'turn') turn = o;
+        else if (ins === 'flagF') flag[p] = false;
+        if (!blocked) pc[p] = (pc[p] + 1) % prog.length;
+      }
+      puzzle = { schedule };
+    } else if (algo === 'hardware') {
+      const ops = [];
+      for (let i = 0; i < 8; i++) ops.push({ p: pick(2), kind: Math.random() < 0.72 ? 'tsl' : 'release' });
+      puzzle = { ops };
+    } else if (algo === 'mutex') {
+      const ops = [];
+      for (let i = 0; i < 8; i++) ops.push({ p: pick(2), kind: Math.random() < 0.55 ? 'acquire' : 'release' });
+      puzzle = { ops };
+    } else {
+      const ops = [];
+      for (let i = 0; i < 8; i++) ops.push({ p: pick(2), kind: Math.random() < 0.5 ? 'P' : 'V' });
+      puzzle = { initial: pick(3), ops };
+    }
+    // Reject puzzles whose answers never vary — a run where every event has the
+    // same answer teaches nothing and can be guessed blind.
+    const keys = new Set(syncSim(algo, puzzle).steps.map((s) => s.answerKey));
+    const want = algo === 'mutex' ? 3 : 2;
+    if (keys.size >= want) return { algo, puzzle };
+  }
+  const fallback = {
+    critical: { events: [
+      { p: 0, op: 'work' }, { p: 0, op: 'enter' }, { p: 1, op: 'work' }, { p: 1, op: 'enter' },
+      { p: 0, op: 'exit' }, { p: 0, op: 'work' }, { p: 1, op: 'exit' }, { p: 0, op: 'enter' }] },
+    peterson: { schedule: [
+      { p: 0, ins: 'flagT' }, { p: 0, ins: 'turn' }, { p: 0, ins: 'check' }, { p: 1, ins: 'flagT' },
+      { p: 1, ins: 'turn' }, { p: 1, ins: 'check' }, { p: 0, ins: 'cs' }, { p: 1, ins: 'check' },
+      { p: 0, ins: 'flagF' }, { p: 1, ins: 'check' }, { p: 1, ins: 'cs' }, { p: 1, ins: 'flagF' }] },
+    hardware: { ops: [
+      { p: 0, kind: 'tsl' }, { p: 1, kind: 'tsl' }, { p: 1, kind: 'tsl' }, { p: 0, kind: 'release' },
+      { p: 1, kind: 'tsl' }, { p: 0, kind: 'release' }, { p: 1, kind: 'release' }, { p: 0, kind: 'tsl' }] },
+    mutex: { ops: [
+      { p: 0, kind: 'acquire' }, { p: 1, kind: 'acquire' }, { p: 0, kind: 'acquire' }, { p: 0, kind: 'release' },
+      { p: 1, kind: 'release' }, { p: 1, kind: 'acquire' }, { p: 0, kind: 'release' }, { p: 1, kind: 'release' }] },
+    semaphore: { initial: 1, ops: [
+      { p: 0, kind: 'P' }, { p: 1, kind: 'P' }, { p: 0, kind: 'P' }, { p: 0, kind: 'V' },
+      { p: 1, kind: 'V' }, { p: 0, kind: 'P' }, { p: 1, kind: 'V' }, { p: 0, kind: 'V' }] }
+  };
+  return { algo, puzzle: fallback[algo] };
+}
+
+// no-store: the browser must never cache app.js/style.css, otherwise a fix can
+// appear "not to work" because an old copy is still being served locally.
+function send(res, status, body, type = 'application/json') { res.writeHead(status, { 'Content-Type': type, 'Cache-Control': 'no-store, must-revalidate' }); res.end(type === 'application/json' ? JSON.stringify(body) : body); }
 function read(req) { return new Promise(resolve => { let data = ''; req.on('data', c => data += c); req.on('end', () => resolve(data ? JSON.parse(data) : {})); }); }
 
 const server = http.createServer(async (req, res) => {
@@ -453,10 +556,14 @@ const server = http.createServer(async (req, res) => {
       return send(res, 201, { id, frames, maxPage, refs, access, shared, algorithm, level, mode });
     }
     if (mode === 'fs') {
-      strategyForPuzzle = algorithm;
-      const { diskSize, disk, files } = generateFsPuzzle();
+      const { diskSize, disk, files } = generateFsPuzzle(algorithm);
       sessions.set(id, { player, diskSize, disk, files, algorithm, level, mode, createdAt: Date.now() });
       return send(res, 201, { id, diskSize, disk, files, algorithm, level, mode });
+    }
+    if (mode === 'sync') {
+      const { algo, puzzle } = generateSyncPuzzle(algorithm);
+      sessions.set(id, { player, puzzle, algorithm: algo, level, mode, createdAt: Date.now() });
+      return send(res, 201, { id, puzzle, algorithm: algo, level, mode });
     }
     if (mode === 'alloc') {
       const { holes, reqSizes } = generateAllocPuzzle();
@@ -530,21 +637,35 @@ const server = http.createServer(async (req, res) => {
       baseScore = Math.max(0, correct * 55 + (perfect ? 400 : 0) + Math.max(0, 200 - Math.floor(elapsed / 2)) - (total - correct) * 25);
       extra = { faults, expected: steps };
     } else if (session.mode === 'fs') {
-      const { steps: expectedSteps } = fileAllocSim(session.disk, session.files, session.algorithm);
-      // Only files that actually fit are gradeable. A file with no room on disk
-      // (blocks === null) is unsolvable by design — counting it in `total`
-      // would make a perfect score unreachable.
-      const gradeable = expectedSteps.filter(s => s && s.blocks);
-      total = gradeable.length || 1;
+      // Grade every file against the strategy's stated rule (any legal placement
+      // counts), replaying the disk exactly as the player saw it: a selection
+      // consumes its blocks whether or not it was a legal placement. Every file
+      // is gradeable now because generateFsPuzzle() builds a solvable disk.
+      const disk = session.disk.map(v => !!v);
+      total = session.files.length;
       actions.forEach((blocks, index) => {
-        const st = expectedSteps[index];
-        if (!st || !st.blocks) return;
-        if (Array.isArray(blocks) && blocks.length === st.blocks.length &&
-            blocks.every((b, k) => Number(b) === st.blocks[k])) correct++;
+        const file = session.files[index];
+        if (!file) return;
+        if (fsPlacementOk(disk, blocks, file, session.algorithm)) correct++;
+        if (Array.isArray(blocks)) blocks.forEach(b => {
+          const n = Number(b);
+          if (Number.isInteger(n) && n >= 0 && n < disk.length) disk[n] = false;
+        });
       });
       const perfect = correct === total;
       baseScore = Math.max(0, correct * 80 + (perfect ? 420 : 0) + Math.max(0, 220 - Math.floor(elapsed / 2)) - (total - correct) * 35);
-      extra = { expectedBlocks: expectedSteps.map(s => s.blocks) };
+      extra = { expectedBlocks: fileAllocSim(session.disk, session.files, session.algorithm).steps.map(s => s.blocks) };
+    } else if (session.mode === 'sync') {
+      // actions = the key the player picked for each question, in order
+      const { steps } = syncSim(session.algorithm, session.puzzle);
+      total = steps.length;
+      actions.forEach((key, index) => {
+        const st = steps[index];
+        if (st && key === st.answerKey) correct++;
+      });
+      const perfect = correct === total;
+      baseScore = Math.max(0, correct * 70 + (perfect ? 400 : 0) + Math.max(0, 200 - Math.floor(elapsed / 2)) - (total - correct) * 35);
+      extra = { expected: steps.map(s => s.answerKey) };
     } else if (session.mode === 'alloc') {
       const { steps } = allocateHoles(session.holes, session.reqSizes, session.algorithm);
       total = steps.length;

@@ -32,3 +32,238 @@
 .home-btn.show{display:inline-flex}
 body:has(#welcome:not([hidden])) .home-btn{display:none}
 
+/* DEADLOCK MANAGEMENT */
+#deadlock-game .dl-guide{padding:18px 20px;margin:0 0 16px;color:#c4d5ee;line-height:1.55}
+#deadlock-game .dl-guide .section-title{margin-bottom:8px}
+#deadlock-game .dl-guide p{margin:6px 0;font-size:14px}
+#deadlock-game .dl-guide p b,#deadlock-game .dl-guide strong{color:#fff}
+#deadlock-game .dl-key{display:flex;gap:8px 20px;flex-wrap:wrap;margin-top:12px;padding-top:10px;border-top:1px solid #294364;color:#a9bad2;font-size:12px}
+#deadlock-game .dl-key b{color:var(--cyan)}
+#deadlock-game .grid.compact{grid-template-columns:minmax(0,1fr) minmax(280px,340px);align-items:stretch}
+#deadlock-game .queue,#deadlock-game .status,#deadlock-game .timeline{min-width:0}
+#deadlock-game .queue{padding:20px 16px}
+#deadlock-game .dl-table-wrap{width:100%;overflow-x:auto}
+#deadlock-game .dl-table{width:100%;min-width:620px;border-collapse:separate;border-spacing:0;color:#eaf6ff;font-size:14px;text-align:center;font-variant-numeric:tabular-nums}
+#deadlock-game .dl-table th,#deadlock-game .dl-table td{padding:8px 7px;border-bottom:1px solid #223b59;white-space:nowrap}
+#deadlock-game .dl-table thead th{color:#a9bad2;font:700 11px 'Space Grotesk',sans-serif;text-transform:uppercase;letter-spacing:.04em}
+#deadlock-game .dl-table thead th:first-child,#deadlock-game .dl-table tbody th{color:#fff;text-align:left}
+#deadlock-game .dl-table th small{display:block;margin-top:2px;color:#8199b8;font:10px 'Space Grotesk',sans-serif;text-transform:none;letter-spacing:0}
+#deadlock-game .dl-table .alloc{color:#fff}
+#deadlock-game .dl-table .maxc{color:#a9bad2}
+#deadlock-game .dl-table .need{color:var(--amber);font-weight:700}
+#deadlock-game .dl-table .avail{color:var(--lime);font-weight:700}
+#deadlock-game .dl-table .available-row th,#deadlock-game .dl-table .available-row td{border-top:1px solid #3e678e;border-bottom:0;font-weight:700}
+#deadlock-game .dl-request-help,#deadlock-game .dl-log-help{display:block;margin:-7px 0 14px;padding:0;border:0;color:#a9bad2;font-size:13px;line-height:1.45}
+#deadlock-game .dl-request{margin-bottom:14px}
+#deadlock-game .big-req{display:flex;align-items:center;gap:7px;font-size:18px;line-height:1.3}
+#deadlock-game .big-req b{color:var(--cyan);font-family:Orbitron,sans-serif}
+#deadlock-game .dl-req-resources{display:flex;gap:8px;flex-wrap:wrap;margin:12px 0}
+#deadlock-game .dl-req-resources span{display:flex;align-items:center;gap:10px;padding:8px 12px;border:1px solid #315072;border-radius:7px;background:#0a172a;color:#a9bad2;font:12px 'Space Grotesk',sans-serif}
+#deadlock-game .dl-req-resources b{color:#fff;font:700 18px Orbitron,sans-serif}
+#deadlock-game .req-progress{color:#91a9c8;font:11px Orbitron,sans-serif;letter-spacing:.04em}
+#deadlock-game .dl-actions{display:grid;gap:9px}
+#deadlock-game .dl-actions .submit-btn{max-width:none;min-height:48px}
+#deadlock-game #dl-grant{background:linear-gradient(90deg,#62f8ff,#7b7aff)}
+#deadlock-game #dl-deny{background:#26395c;color:#fff;border:1px solid #45638a}
+#deadlock-game #dl-hint{margin-top:9px}
+#deadlock-game #dl-feedback{display:grid;gap:8px;margin-top:12px;font:13px 'Space Grotesk',sans-serif;line-height:1.45}
+#deadlock-game #dl-feedback strong{font:700 13px Orbitron,sans-serif}
+#deadlock-game #dl-feedback.good{border-color:var(--lime);color:#d9ffc1}
+#deadlock-game #dl-feedback.bad{border-color:var(--pink);color:#ffd4e9}
+#deadlock-game .timeline{min-height:0;padding:18px 20px}
+#deadlock-game .timeline .section-title{margin-bottom:8px}
+#deadlock-game .dl-log-help{margin:0 0 10px}
+#deadlock-game #dl-log{display:grid;gap:6px;max-height:220px;overflow:auto}
+#deadlock-game #dl-log .log-entry{display:grid;grid-template-columns:52px minmax(150px,1fr) minmax(180px,1.4fr);gap:10px;padding:9px 10px;background:#0a172a;border:1px solid #1e3551;border-radius:6px;font:12px 'Space Grotesk',sans-serif}
+#deadlock-game #dl-log .step{color:var(--cyan);font-weight:700}
+#deadlock-game #dl-log .page{color:#c4d5ee;min-width:0}
+#deadlock-game #dl-log .good{color:var(--lime)}
+#deadlock-game #dl-log .bad{color:var(--pink)}
+@media(max-width:760px){#deadlock-game .grid.compact{grid-template-columns:1fr}#deadlock-game .status{display:block}#deadlock-game .dl-table{min-width:620px}#deadlock-game #dl-log .log-entry{grid-template-columns:44px minmax(105px,1fr);gap:6px}#deadlock-game #dl-log .log-entry>span:last-child{grid-column:2}}
+
+/* VIRTUAL MEMORY AND FILE SYSTEM ALLOCATION */
+#vm-game #vm-frames{display:flex;flex-wrap:wrap;align-items:flex-start;gap:10px;min-height:90px}
+#vm-game #vm-frames .frame{flex:0 0 72px;width:72px;height:88px}
+#vm-game #vm-refs{display:flex;flex-wrap:wrap;align-items:center;gap:8px;min-height:52px}
+#vm-game #vm-refs .ref-item{flex-direction:column;gap:1px}
+#vm-game #vm-refs .ref-item small{display:block;color:#91a9c8;font:10px 'Space Grotesk',sans-serif}
+#fs-game .grid.compact{grid-template-columns:minmax(0,1fr) minmax(280px,340px);align-items:stretch}
+#fs-game .queue,#fs-game .status,#fs-game .timeline{min-width:0}
+#fs-game .queue{padding:20px}
+#fs-game .fs-disk{display:grid;grid-template-columns:repeat(auto-fill,minmax(54px,1fr));gap:9px;align-items:start}
+#fs-game .fs-block{display:flex;align-items:center;justify-content:center;aspect-ratio:1;border:1px solid #3e678e;border-radius:9px;font:700 17px Orbitron,sans-serif;user-select:none;cursor:pointer;transition:transform .15s,border-color .15s,background .15s,box-shadow .15s}
+#fs-game .fs-block:hover{transform:translateY(-2px);border-color:#fff}
+#fs-game .fs-block.free{background:#0a172a;color:var(--cyan)}
+#fs-game .fs-block.sel{background:#1b3824;border:2px solid var(--lime);color:var(--lime);box-shadow:0 0 12px #a8ff6044}
+#fs-game .fs-block.used{background:#202b40;border-color:#36465f;color:#637895;cursor:not-allowed}
+#fs-game .fs-legend{display:flex;flex-wrap:wrap;gap:10px 18px;margin-top:16px;color:#a9bad2;font-size:12px}
+#fs-game .fs-legend span{display:flex;align-items:center;gap:7px}
+#fs-game .fs-legend i{width:12px;height:12px;border-radius:3px;border:1px solid #3e678e;background:#0a172a}
+#fs-game .fs-legend .selected-key{background:#1b3824;border-color:var(--lime)}
+#fs-game .fs-legend .used-key{background:#202b40;border-color:#36465f}
+#fs-game .fs-files{display:flex;gap:10px;flex-wrap:nowrap;overflow-x:auto;padding-bottom:2px}
+#fs-game .fs-file{flex:1 1 0;min-width:0;display:grid;gap:4px;padding:11px 12px;border:1px solid #294364;border-radius:8px;background:#0a172a;color:#a9bad2;font-size:13px}
+#fs-game .fs-file strong{color:inherit;font:700 12px Orbitron,sans-serif}
+#fs-game .fs-file span{font-size:12px}
+#fs-game .fs-file.cur{border-color:var(--cyan);background:#102b43;color:#fff;box-shadow:inset 0 3px var(--cyan)}
+#fs-game .fs-file.done{border-color:#314b38;color:#a8ff60}
+#fs-game .fs-selection{display:grid;gap:5px;margin:12px 0 14px;padding:12px;border:1px solid #294364;border-radius:8px;background:#0a172a;color:#91a9c8;font-size:12px}
+#fs-game .fs-selection b{color:#fff;font:600 14px 'Space Grotesk',sans-serif;overflow-wrap:anywhere}
+#fs-game .fs-actions{display:grid;gap:8px}
+#fs-game .fs-actions button{width:100%;max-width:none;min-height:46px}
+#fs-game #fs-clear{background:#26395c;color:#fff;border:1px solid #45638a}
+#fs-game #fs-skip{background:#4a2230;color:#ffd9e2;border:1px solid #a8435f}
+#fs-game #fs-confirm:disabled{opacity:.45;cursor:not-allowed;filter:none}
+#fs-game #fs-hint{margin-top:9px}
+#fs-game #fs-feedback{margin-top:10px;font:13px 'Space Grotesk',sans-serif;line-height:1.45}
+#fs-game .timeline{min-height:0;padding:18px 20px}
+#fs-game .timeline .section-title{margin-bottom:8px}
+#fs-game .fs-log-help{margin:0 0 10px;color:#a9bad2;font-size:13px;line-height:1.45}
+#fs-game #fs-log{display:grid;gap:6px;max-height:220px;overflow:auto}
+#fs-game #fs-log .log-entry{display:grid;grid-template-columns:72px minmax(110px,1fr) minmax(160px,1.4fr);gap:10px;padding:9px 10px;background:#0a172a;border:1px solid #1e3551;border-radius:6px;font:12px 'Space Grotesk',sans-serif}
+#fs-game #fs-log .step{color:var(--cyan);font-weight:700}
+#fs-game #fs-log .page{color:#a9bad2;min-width:0}
+#fs-game #fs-log .good{color:var(--lime)}
+#fs-game #fs-log .bad{color:var(--pink)}
+@media(max-width:760px){#fs-game .grid.compact{grid-template-columns:1fr}#fs-game .status{display:block}#fs-game .fs-disk{grid-template-columns:repeat(auto-fill,minmax(48px,1fr));gap:7px}#fs-game .queue{padding:16px}#fs-game #fs-log .log-entry{grid-template-columns:60px minmax(105px,1fr);gap:6px}#fs-game #fs-log .log-entry>span:last-child{grid-column:2}}
+
+/* CLEARER VIRTUAL MEMORY AND FILE SYSTEM GUIDANCE */
+#vm-game .vm-key{display:flex;align-items:center;flex-wrap:wrap;gap:8px 16px;margin:18px 0 10px;color:#a9bad2;font-size:12px}
+#vm-game .vm-key b{font:700 12px Orbitron,sans-serif;color:#c4d5ee}
+#vm-game .vm-key span{white-space:nowrap}
+#vm-game .vm-key strong{color:var(--cyan)}
+#vm-game #vm-refs{padding:8px 0;flex-wrap:nowrap;gap:6px;overflow-x:auto;overflow-y:hidden}
+#vm-game #vm-refs .ref-item{flex:1 1 0;min-width:30px;width:auto;height:48px;border-radius:7px;font:700 13px Orbitron,sans-serif}
+#vm-game #vm-refs .ref-item.current{transform:translateY(-2px);z-index:1}
+#vm-game .vm-current{display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:12px;border:1px solid #315072;border-radius:8px;background:#0a172a}
+#vm-game .vm-current-page{font:700 22px Orbitron,sans-serif;color:#fff}
+#vm-game .vm-access{padding:5px 9px;border-radius:5px;background:#163458;color:var(--cyan);font:700 11px Orbitron,sans-serif}
+#vm-game .req-progress{flex-basis:100%;color:#91a9c8;font:10px Orbitron,sans-serif}
+#vm-game .frame-name{color:#91a9c8;font:9px Orbitron,sans-serif}
+#vm-game .vm-question{display:block;margin:12px 0;padding:0;border:0;color:#a9bad2;font-size:13px;line-height:1.4}
+#vm-game .vm-choices{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
+#vm-game .vm-choices .pred-btn{display:flex;flex-direction:column;align-items:flex-start;justify-content:center;gap:5px;width:100%;min-width:0;min-height:76px;padding:10px;border:1px solid #3e678e;border-radius:8px;text-align:left;letter-spacing:0;background:#16243a;color:#fff}
+#vm-game .vm-choices .pred-btn.hit{border-color:#68b77b;background:#153323;color:#b9ffc6}
+#vm-game .vm-choices .pred-btn.miss{border-color:#8a647c;background:#302238;color:#ffd7eb}
+#vm-game .vm-choices .btn-label{font:700 11px Orbitron,sans-serif}
+#vm-game .vm-choices .btn-desc{font:11px 'Space Grotesk',sans-serif;color:#d3deed;line-height:1.3}
+#vm-game #vm-hint{margin-top:9px}
+#vm-game #vm-feedback,#fs-game #fs-feedback{display:grid;gap:6px;text-align:left;font:13px 'Space Grotesk',sans-serif;line-height:1.45}
+#vm-game #vm-feedback strong,#fs-game #fs-feedback strong{font:700 12px Orbitron,sans-serif}
+#vm-game #vm-feedback.good,#fs-game #fs-feedback.good{border-color:var(--lime);color:#d9ffc1}
+#vm-game #vm-feedback.bad,#fs-game #fs-feedback.bad{border-color:var(--pink);color:#ffd4e9}
+#vm-game .timeline,#fs-game .timeline{min-height:0}
+#vm-game .vm-log-help{margin:0 0 10px;color:#a9bad2;font-size:13px;line-height:1.45}
+#vm-game #vm-log{display:grid;gap:6px;max-height:220px;overflow:auto}
+#vm-game #vm-log .log-entry{display:grid;grid-template-columns:100px 75px minmax(180px,1fr);gap:10px;padding:9px 10px;border:1px solid #1e3551;border-radius:6px;background:#0a172a;font:12px 'Space Grotesk',sans-serif}
+#vm-game #vm-log .step{color:var(--cyan);font-weight:700}
+#vm-game #vm-log .page{color:#c4d5ee;min-width:0}
+#vm-game #vm-log .good{color:var(--lime)}
+#vm-game #vm-log .bad{color:var(--pink)}
+#fs-game .fs-howto{display:grid;gap:5px;margin:0 0 16px;padding:14px 18px;border-left:3px solid var(--cyan);color:#c4d5ee;line-height:1.45}
+#fs-game .fs-howto b{color:var(--cyan);font:700 11px Orbitron,sans-serif}
+#fs-game .fs-block{position:relative;flex-direction:column;gap:2px}
+#fs-game .fs-block small{font:8px Orbitron,sans-serif;color:#0b2110}
+#fs-game .fs-block.index-block{background:var(--lime);color:#0b2110;box-shadow:0 0 13px #a8ff6077}
+#fs-game .fs-selection b{line-height:1.5}
+#fs-game #fs-notice{max-width:1000px;margin:8px auto 12px;padding:10px 14px;border:1px solid #294364;border-radius:8px;background:#101a31;color:#c4d5ee;font-size:14px;line-height:1.4}
+#fs-game #fs-log .step{white-space:nowrap}
+@media(max-width:760px){#vm-game .grid.compact,#fs-game .grid.compact{grid-template-columns:1fr}#vm-game .status,#fs-game .status{display:block}#vm-game .vm-choices{grid-template-columns:repeat(2,minmax(0,1fr))}#vm-game #vm-log .log-entry{grid-template-columns:62px 50px minmax(0,1fr);gap:6px;padding:8px}#fs-game .fs-howto{padding:12px}#fs-game #fs-free-count{font-size:10px}}
+
+/* DIRECT, STEP-BY-STEP DECISION GUIDES */
+#deadlock-game .dl-steps{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px}
+#deadlock-game .dl-steps article{min-width:0;padding:12px;border:1px solid #294364;border-radius:8px;background:#0a172a}
+#deadlock-game .dl-steps article>b{display:flex;align-items:center;gap:8px;color:#fff;font:700 11px Orbitron,sans-serif}
+#deadlock-game .dl-steps article>b span{display:grid;place-items:center;width:22px;height:22px;border-radius:50%;background:#163458;color:var(--cyan)}
+#deadlock-game .dl-steps p{display:block;margin:8px 0 0;padding:0;border:0;color:#a9bad2;font-size:12px;line-height:1.45}
+#deadlock-game .dl-steps p strong{color:#fff}
+#deadlock-game .dl-guide .dl-key{margin-top:10px}
+#fs-game .fs-howto{gap:10px}
+#fs-game .fs-howto-title{color:var(--cyan);font:700 11px Orbitron,sans-serif}
+#fs-game .fs-howto-steps{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}
+#fs-game .fs-howto-steps span{display:flex;align-items:center;gap:8px;color:#c4d5ee;font-size:12px;line-height:1.35}
+#fs-game .fs-howto-steps b{display:grid;place-items:center;flex:0 0 22px;height:22px;border-radius:50%;background:#163458;color:var(--cyan);font:700 11px Orbitron,sans-serif}
+#fs-game .queue{align-self:start}
+#fs-game .status{align-self:start}
+#fs-game .fs-disk{grid-template-columns:repeat(6,minmax(0,70px));justify-content:start;gap:10px}
+#fs-game .fs-block{width:100%;min-height:60px;aspect-ratio:1}
+#fs-game .fs-selection{min-height:66px}
+@media(max-width:760px){#deadlock-game .dl-steps{grid-template-columns:1fr}#deadlock-game .dl-steps p{margin-top:6px}#fs-game .fs-howto-steps{grid-template-columns:1fr;gap:6px}#fs-game .fs-disk{grid-template-columns:repeat(4,minmax(0,64px));gap:8px}}
+
+/* ==================== SYNCHRONIZATION LAB ==================== */
+#sync-game .grid.compact{grid-template-columns:minmax(0,1fr) minmax(280px,340px);align-items:stretch}
+#sync-game .queue,#sync-game .status,#sync-game .timeline{min-width:0}
+#sync-game .sync-state{display:flex;flex-wrap:wrap;gap:10px}
+#sync-game .sync-state .st{flex:1 1 148px;min-width:126px;padding:12px;border:1px solid #294364;border-radius:8px;background:#0a172a}
+#sync-game .sync-state .st span{display:block;font:10px Orbitron,sans-serif;color:#91a9c8;letter-spacing:1px}
+#sync-game .sync-state .st b{display:block;margin-top:6px;font:700 16px Orbitron,sans-serif;color:var(--cyan);overflow-wrap:anywhere}
+#sync-game .sync-trace{display:flex;flex-wrap:wrap;gap:6px;min-height:44px}
+#sync-game .sync-trace span{padding:7px 10px;border:1px solid #3e678e;border-radius:6px;background:#0a172a;font:600 12px 'Space Grotesk',sans-serif;color:#b6c7df}
+#sync-game .sync-trace span.now{border-color:var(--lime);color:var(--lime);box-shadow:0 0 10px #a8ff6044}
+#sync-game .sync-question{padding:13px;border:1px solid #315072;border-radius:8px;background:#0a172a;color:#eaf6ff;font-size:14px;line-height:1.5}
+#sync-game .sync-choices{display:grid;gap:8px;margin:12px 0 10px}
+#sync-game .sync-choices .pred-btn{display:flex;flex-direction:column;align-items:flex-start;gap:4px;width:100%;min-width:0;padding:12px;border:1px solid #3e678e;border-radius:8px;text-align:left;letter-spacing:0;background:#16243a;color:#fff}
+#sync-game .sync-choices .btn-label{font:700 12px Orbitron,sans-serif}
+#sync-game .sync-choices .btn-desc{font:11px 'Space Grotesk',sans-serif;color:#c9d7ea;line-height:1.35}
+#sync-game .sync-log-help{color:#8ca2bf;font-size:12px;margin:-6px 0 12px}
+#sync-game #sync-log .log-entry{display:grid;grid-template-columns:58px minmax(0,1fr);gap:8px;align-items:start}
+#sync-game #sync-log .log-entry .step{color:var(--amber);font:600 12px 'Space Grotesk',sans-serif}
+#sync-game .sync-viz{margin-bottom:14px}
+#sync-game .viz{display:grid;gap:10px}
+#sync-game .viz-cards{grid-template-columns:1fr 1fr}
+#sync-game .viz-row,#sync-game .viz-box{display:flex;align-items:center;gap:12px;padding:12px;border:1px solid #294364;border-radius:9px;background:#081426;flex-wrap:wrap}
+#sync-game .viz-box{border-color:#4d7a3f;background:#0c1d14}
+#sync-game .viz-lbl{font:10px Orbitron,sans-serif;color:#91a9c8;letter-spacing:1px;min-width:118px}
+#sync-game .viz-slots{display:flex;gap:8px;flex-wrap:wrap;align-items:center;min-height:34px}
+#sync-game .viz-none{color:#5d7695;font-size:12px}
+#sync-game .proc{padding:7px 13px;border:1px solid #3e678e;border-radius:7px;background:#0a172a;font:700 13px Orbitron,sans-serif;color:var(--cyan)}
+#sync-game .proc.alt{border-style:dashed}
+#sync-game .proc.in{border-color:var(--lime);background:#12351f;color:var(--lime)}
+#sync-game .viz-card{display:grid;gap:5px;padding:12px;border:1px solid #294364;border-radius:9px;background:#081426}
+#sync-game .viz-card b{font:700 14px Orbitron,sans-serif;color:var(--cyan)}
+#sync-game .viz-card span{font-size:12px;color:#b6c7df}
+#sync-game .viz-card em{color:#fff;font-style:normal;font-weight:700}
+#sync-game .viz-card .tag{margin-top:4px;font:10px Orbitron,sans-serif;letter-spacing:1px;color:var(--lime)}
+#sync-game .viz-card.blocked{border-color:var(--pink)}
+#sync-game .viz-card.blocked .tag{color:var(--pink)}
+#sync-game .viz-lock{align-items:center}
+#sync-game .lock-badge{display:grid;gap:3px;padding:12px 16px;border:1px solid #4d7a3f;border-radius:9px;background:#0c1d14;text-align:center}
+#sync-game .lock-badge.shut{border-color:var(--pink);background:#2c1524}
+#sync-game .lock-badge b{font:700 15px Orbitron,sans-serif;color:var(--lime)}
+#sync-game .lock-badge.shut b{color:var(--pink)}
+#sync-game .lock-badge span{font-size:11px;color:#b6c7df}
+#sync-game .viz-note{font-size:12px;color:#91a9c8}
+#sync-game .viz-sem{grid-template-columns:auto minmax(0,1fr);align-items:center}
+#sync-game .sem-count{display:grid;gap:2px;padding:12px 18px;border:1px solid #294364;border-radius:9px;background:#081426;text-align:center}
+#sync-game .sem-count b{font:700 28px Orbitron,sans-serif;color:var(--cyan)}
+#sync-game .sem-count span{font-size:10px;color:#91a9c8}
+#sync-game .sem-queue{display:flex;align-items:center;gap:12px;flex-wrap:wrap}
+@media(max-width:760px){#sync-game .grid.compact{grid-template-columns:1fr}#sync-game .status{display:block}#sync-game .viz-cards,#sync-game .viz-sem{grid-template-columns:1fr}#sync-game #sync-log .log-entry{grid-template-columns:1fr}}
+
+/* ==================== HELP / RULES PAGE ==================== */
+.help-open{width:100%;margin:14px 0 0;padding:13px;background:#16243a;color:var(--cyan);border:1px solid #3e678e;font-size:12px}
+.help-fab{position:fixed;right:20px;bottom:20px;z-index:60;width:46px;height:46px;min-height:0;padding:0;border-radius:50%;background:#16243a;color:var(--cyan);border:1px solid #3e678e;font:700 20px Orbitron,sans-serif;box-shadow:0 0 18px #00c8ff33}
+.help-fab:hover{border-color:var(--cyan)}
+#help-overlay{position:fixed;inset:0;z-index:70;background:#03050bf2;overflow-y:auto;padding:26px 18px 60px}
+.help-panel{max-width:880px;margin:0 auto;padding:26px;border:1px solid var(--line);border-radius:14px;background:#0b1428;box-shadow:0 0 45px #00c8ff1a}
+.help-head{display:flex;align-items:center;gap:16px;border-bottom:1px solid #1e3551;padding-bottom:14px;margin-bottom:16px}
+.help-head h2{font:700 24px Orbitron,sans-serif;color:#fff;margin:0;letter-spacing:1px}
+.help-close{margin-left:auto;padding:10px 14px;background:#26395c;color:#fff;font-size:11px}
+.help-lede{color:#b6c7df;font-size:14px;line-height:1.6;margin:0 0 16px}
+.help-toc{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:20px}
+.help-toc a{padding:7px 11px;border:1px solid #294364;border-radius:999px;background:#0a172a;color:var(--cyan);font-size:12px;text-decoration:none}
+.help-toc a:hover{border-color:var(--cyan)}
+.help-sec{border:1px solid #1e3551;border-radius:10px;background:#0a172a;margin-bottom:10px}
+.help-sec>summary{cursor:pointer;padding:14px 16px;font:700 13px Orbitron,sans-serif;color:var(--cyan);letter-spacing:.5px}
+.help-sec>summary::before{content:'\25B8  ';color:var(--pink)}
+.help-sec[open]>summary::before{content:'\25BE  '}
+.help-sec>summary:hover{background:#0f1c33}
+.help-sec>p,.help-sec>ul,.help-sec>h4{margin:0 16px 14px}
+.help-sec>ul{padding-left:20px;color:#c4d5ee;font-size:13px;line-height:1.65}
+.help-sec>p{color:#c4d5ee;font-size:13px;line-height:1.65}
+.help-sec>h4{color:#fff;font:700 12px Orbitron,sans-serif;margin-top:18px;letter-spacing:.5px}
+.help-sec code{background:#16243a;padding:2px 6px;border-radius:4px;font-size:12px;color:var(--lime)}
+.help-table{width:calc(100% - 32px);margin:0 16px 14px;border-collapse:collapse;font-size:12.5px;color:#c4d5ee}
+.help-table th{text-align:left;padding:8px 10px;background:#16243a;color:var(--cyan);font:700 11px Orbitron,sans-serif}
+.help-table td{padding:8px 10px;border-top:1px solid #1e3551;vertical-align:top}
+.help-table td:first-child{white-space:nowrap;color:#fff;font-weight:600}

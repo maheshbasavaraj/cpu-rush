@@ -21,6 +21,7 @@
         <option value="deadlock">Deadlock Management (Banker's)</option>
         <option value="vm">Virtual Memory / Demand Paging</option>
         <option value="fs">File System Allocation</option>
+        <option value="sync">Synchronization (Critical Section → Semaphores)</option>
       </select>
     </label>
   </div>
@@ -85,8 +86,20 @@
       </select>
     </label>
   </div>
+  <div class="mission-select" id="sync-algo-container" hidden>
+    <label>Topic
+      <select name="sync-algo" id="sync-algo-select">
+        <option value="critical">The Critical-Section Problem</option>
+        <option value="peterson">Peterson's Solution</option>
+        <option value="hardware">Hardware Support for Synchronization (TSL / Swap)</option>
+        <option value="mutex">Mutex Locks</option>
+        <option value="semaphore">Semaphores</option>
+      </select>
+    </label>
+  </div>
   <button>START MISSION <b>→</b></button>
 </form>
+<button type="button" id="help-btn" class="help-open">📖 HOW TO PLAY — full rules for every game</button>
 <small class="algo-desc" id="algo-desc">Select a game mode to choose your algorithm.</small>
 <div class="kbd-hints" id="welcome-kbd"></div>
 </section>
@@ -267,6 +280,16 @@
 </header>
 <div class="notice" id="dl-notice">A process requests resources. Grant it only if the state stays SAFE.</div>
 
+<section class="panel dl-guide" aria-label="How Banker’s Algorithm works">
+  <div class="section-title">BANKER’S ALGORITHM · DECIDE IN THIS ORDER</div>
+  <div class="dl-steps">
+    <article><b><span>1</span> Check limits</b><p>Request must be ≤ this process’s <strong>Need</strong> and the system’s <strong>Available</strong> amount. If either check fails, deny.</p></article>
+    <article><b><span>2</span> Pretend to grant</b><p>Subtract the request from Available and add it to the process’s Allocation. Then check if the new state is safe.</p></article>
+    <article><b><span>3</span> Find a finish order</b><p>If every process could finish in some order and return its resources, grant. If not, deny: the state is unsafe (deadlock is possible, not already happening).</p></article>
+  </div>
+  <div class="dl-key"><span><b>Need</b> = Maximum − Allocation</span><span><b>Allocation</b> = held now</span><span><b>Available</b> = free now</span></div>
+</section>
+
 <div class="grid compact">
   <section class="panel queue">
     <div class="section-title">RESOURCE STATE</div>
@@ -274,6 +297,7 @@
   </section>
   <aside class="panel status">
     <div class="section-title">INCOMING REQUEST</div>
+    <p class="dl-request-help">Should this request be granted while keeping the system safe?</p>
     <div id="dl-request" class="dl-request"></div>
     <div class="dl-actions">
       <button id="dl-grant" class="submit-btn">✓ GRANT</button>
@@ -285,6 +309,7 @@
 </div>
 <section class="panel timeline compact">
   <div class="section-title">SAFE SEQUENCE LOG</div>
+  <p class="dl-log-help">A safe sequence is one possible order in which every process can finish and release its resources.</p>
   <div id="dl-log"></div>
 </section>
 </section>
@@ -298,18 +323,19 @@
   <div class="stat">TIME <strong id="vm-timer">00:00</strong></div>
   <button class="mute-btn" data-mute title="Sound on/off">🔊</button>
 </header>
-<div class="notice" id="vm-notice">Each reference: is it a HIT, or a fault (PURE / COW / PROT)?</div>
+<div class="notice" id="vm-notice">For each page reference, decide whether it is a hit or what kind of fault occurred.</div>
 
 <div class="grid compact">
   <section class="panel queue">
-    <div class="section-title">PAGE FRAMES</div>
+    <div class="section-title">PAGE FRAMES <small>pages currently in memory</small></div>
     <div id="vm-frames" class="vm-frames"></div>
-    <div class="section-title" style="margin-top:12px">REFERENCE STREAM</div>
+    <div class="vm-key"><b>REFERENCE STREAM</b><span><strong>R</strong> = read</span><span><strong>W</strong> = write</span><span>Glowing tile = current page request</span></div>
     <div id="vm-refs" class="vm-refs"></div>
   </section>
   <aside class="panel status">
     <div class="section-title">CURRENT REFERENCE</div>
     <div id="vm-current" class="vm-current"></div>
+    <p class="vm-question">Choose the result for this page and access type.</p>
     <div class="vm-choices" id="vm-choices"></div>
     <button class="hint" id="vm-hint">💡 HINT <small>−40 pts</small></button>
     <div id="vm-feedback" class="predict-result" hidden></div>
@@ -317,6 +343,7 @@
 </div>
 <section class="panel timeline compact">
   <div class="section-title">PAGE FAULT LOG</div>
+  <p class="vm-log-help">Each row records the page, read/write access, and what happened.</p>
   <div id="vm-log"></div>
 </section>
 </section>
@@ -332,23 +359,29 @@
 </header>
 <div class="notice" id="fs-notice">Click disk blocks to allocate this file, then confirm.</div>
 
+<div class="panel fs-howto"><div class="fs-howto-title">HOW TO PLAY</div><div class="fs-howto-steps"><span><b>1</b> Read the current file and method rule.</span><span><b>2</b> Select its required free block(s).</span><span><b>3</b> Check the block list and confirm.</span></div></div>
+
 <div class="grid compact">
   <section class="panel queue">
-    <div class="section-title">DISK BLOCKS <small>click to select</small></div>
+    <div class="section-title">FILE QUEUE <small>allocate in order — current file is highlighted</small></div>
+    <div id="fs-files" class="fs-files"></div>
+    <div class="section-title" style="margin:18px 0 16px">DISK BLOCKS <small id="fs-free-count">Select blocks for the current file</small></div>
     <div id="fs-disk" class="fs-disk"></div>
+    <div class="fs-legend"><span><i class="free-key"></i> Free</span><span><i class="selected-key"></i> Selected</span><span><i class="used-key"></i> In use</span></div>
   </section>
   <aside class="panel status">
-    <div class="section-title">FILE QUEUE</div>
-    <div id="fs-files" class="fs-files"></div>
-    <p>Selected: <b id="fs-selected">—</b></p>
-    <button id="fs-confirm" class="submit-btn">CONFIRM</button>
-    <button id="fs-clear" style="margin-top:8px">↺ CLEAR</button>
+    <div class="section-title">YOUR SELECTION <small>blocks chosen for the current file</small></div>
+    <div class="fs-selection"><span id="fs-selected-label">Selected blocks</span><b id="fs-selected">None</b></div>
+    <div class="fs-actions"><button id="fs-confirm" class="submit-btn">CONFIRM ALLOCATION</button>
+    <button id="fs-clear">↺ CLEAR SELECTION</button>
+    <button id="fs-skip" hidden>⤼ SKIP FILE (NO SPACE)</button></div>
     <button class="hint" id="fs-hint">💡 HINT <small>−40 pts</small></button>
     <div id="fs-feedback" class="predict-result" hidden></div>
   </aside>
 </div>
 <section class="panel timeline compact">
   <div class="section-title">ALLOCATION LOG</div>
+  <p class="fs-log-help">Completed files and the disk blocks used for each one.</p>
   <div id="fs-log"></div>
 </section>
 </section>
@@ -362,4 +395,153 @@
   <div class="section-title">🎖️ ACHIEVEMENTS</div>
   <div class="ach-grid" id="ach-grid"></div>
 </section>
+<!-- SYNCHRONIZATION LAB -->
+<section id="sync-game" hidden>
+<header>
+  <div class="brand">CPU <i>RUSH</i><small id="sync-mission-label">SYNC LAB · CRITICAL SECTION</small></div>
+  <div class="stat">SCORE <strong id="sync-score">0</strong></div>
+  <div class="stat">STEP <strong id="sync-progress">0/0</strong></div>
+  <div class="stat">TIME <strong id="sync-timer">00:00</strong></div>
+  <button class="mute-btn" data-mute title="Sound on/off">🔊</button>
+</header>
+<div class="notice" id="sync-notice">Read the system state, then call what happens next.</div>
+
+<div class="grid compact">
+  <section class="panel queue">
+    <div class="section-title">SYSTEM STATE <small>the machine right now</small></div>
+    <div id="sync-viz" class="sync-viz"></div>
+    <div id="sync-state" class="sync-state"></div>
+    <div class="section-title" style="margin:18px 0 12px">EVENT TRACE <small>everything that has run so far</small></div>
+    <div id="sync-trace" class="sync-trace"></div>
+  </section>
+  <aside class="panel status">
+    <div class="section-title">YOUR CALL <small>for the current event</small></div>
+    <div id="sync-question" class="sync-question"></div>
+    <div class="sync-choices" id="sync-choices"></div>
+    <button class="hint" id="sync-hint">💡 HINT <small>−40 pts</small></button>
+    <div id="sync-feedback" class="predict-result" hidden></div>
+  </aside>
+</div>
+<section class="panel timeline compact">
+  <div class="section-title">ANSWER LOG</div>
+  <p class="sync-log-help">Every call you made, and what actually happens.</p>
+  <div id="sync-log"></div>
+</section>
+</section>
+
+<!-- HELP / RULES -->
+<button type="button" id="help-fab" class="help-fab" title="How to play — full rules">?</button>
+<div id="help-overlay" hidden>
+<div class="help-panel">
+  <header class="help-head">
+    <h2>HOW TO PLAY</h2>
+    <button type="button" id="help-close" class="help-close">✕ CLOSE</button>
+  </header>
+  <p class="help-lede">Every game in CPU RUSH is a sequence of decisions. You are shown the current state, you make one call, and you are told immediately whether it was right and why. This page has the full rules for each one — click a heading to open it.</p>
+  <nav class="help-toc" id="help-toc"></nav>
+
+  <div class="help-body">
+    <details class="help-sec"><summary>0 · The basics: scoring, hints, controls</summary>
+      <ul>
+        <li><b>Start a mission:</b> type your name and USN, choose a <b>Mode</b>, then an <b>Algorithm / Policy</b> for that mode, then press <b>START MISSION</b>. Your name and USN are remembered on this browser.</li>
+        <li><b>One decision at a time.</b> Each mission is a queue of decisions. You answer, you get instant feedback ("✓ Correct" or an explanation of what was wrong), and the next decision appears.</li>
+        <li><b>Scoring.</b> Points per correct answer differ per mode (50–100). A perfect run adds a large bonus (300–500). You also earn a time bonus that shrinks the longer you take, and lose points for wrong answers. Your final score goes to the shared leaderboard (top 20).</li>
+        <li><b>Streak.</b> Consecutive correct answers build a streak, shown in the results.</li>
+        <li><b>HINT</b> reveals the answer for the <i>current</i> decision and costs points (−40 to −75). Hints are recorded on your result.</li>
+        <li><b>Controls.</b> <span class="kbd">1</span>–<span class="kbd">9</span> pick an option or card, <span class="kbd">D</span> deploy (CPU scheduling), <span class="kbd">H</span> hint, <span class="kbd">Enter</span> confirm where a confirm button exists.</li>
+        <li><b>XP.</b> Score converts to XP and levels, shown at the top of the home screen. Winning a mode with every algorithm unlocks achievements.</li>
+      </ul>
+    </details>
+
+    <details class="help-sec"><summary>1 · CPU Scheduling</summary>
+      <p>You get a set of processes, each with an <b>arrival</b> time, a <b>burst</b> (how long it needs the CPU), and a <b>priority</b>. Repeatedly pick which process the CPU runs next, until every process has finished. You may only pick a process that has already arrived.</p>
+      <table class="help-table">
+        <tr><th>Algorithm</th><th>Pick next</th></tr>
+        <tr><td>FCFS</td><td>The process that arrived earliest. Ties → lower id first.</td></tr>
+        <tr><td>SJF</td><td>Among the arrived processes, the one with the shortest burst. Non-preemptive: the running process finishes its burst.</td></tr>
+        <tr><td>RR (q = 3)</td><td>The process at the head of the ready queue. It runs for 3 units, then goes to the back of the queue.</td></tr>
+        <tr><td>Priority</td><td>The arrived process with the highest priority — <b>lower number = higher priority</b>.</td></tr>
+      </table>
+    </details>
+
+    <details class="help-sec"><summary>2 · Memory Management — Page Replacement</summary>
+      <p>You get a <b>reference string</b> (a sequence of page numbers) and a fixed number of <b>frames</b>. For each reference decide <b>HIT</b> (the page is already loaded) or <b>MISS</b>, and if it is a miss, which page gets evicted — the <b>victim</b>.</p>
+      <table class="help-table">
+        <tr><th>Policy</th><th>Victim</th></tr>
+        <tr><td>FIFO</td><td>The page that has been in memory the longest (loaded earliest).</td></tr>
+        <tr><td>LRU</td><td>The page that was used least recently.</td></tr>
+        <tr><td>Optimal</td><td>The page that will not be used for the longest time in the future. Needs the whole string up front — a theoretical best case.</td></tr>
+        <tr><td>Clock</td><td>A hand sweeps the frames. If a frame's use bit is 1, clear it and move on; evict the first frame whose use bit is 0.</td></tr>
+      </table>
+      <p>If a frame is still empty, the page is loaded there with no eviction. A page already in a frame is a hit and changes nothing.</p>
+    </details>
+
+    <details class="help-sec"><summary>3 · Disk Scheduling</summary>
+      <p>The disk head sits on a track and there is a queue of pending track requests. Each turn, pick the next request to service.</p>
+      <table class="help-table">
+        <tr><th>Algorithm</th><th>Pick next</th></tr>
+        <tr><td>FCFS</td><td>In arrival order, no reordering at all.</td></tr>
+        <tr><td>SSTF</td><td>The request closest to the current head position — shortest seek first.</td></tr>
+        <tr><td>SCAN (elevator)</td><td>Keep moving in the current direction, serving every request on the way, then reverse at the end.</td></tr>
+      </table>
+    </details>
+
+    <details class="help-sec"><summary>4 · Memory Allocation — Holes</summary>
+      <p>Free memory is split into <b>holes</b> of different sizes. A request arrives; pick the hole the strategy would choose.</p>
+      <table class="help-table">
+        <tr><th>Strategy</th><th>Choose</th></tr>
+        <tr><td>First fit</td><td>The first hole (lowest address) that is big enough.</td></tr>
+        <tr><td>Best fit</td><td>The smallest hole that is big enough — leaves the least waste, but creates tiny leftovers.</td></tr>
+        <tr><td>Worst fit</td><td>The largest hole — leaves the biggest remainder.</td></tr>
+      </table>
+    </details>
+
+    <details class="help-sec"><summary>5 · Deadlock Management — Banker's Algorithm</summary>
+      <p>You get an <b>Allocation</b> table (what each process holds), a <b>Max</b> table (what it will ever need), and <b>Available</b> resources. Remaining <b>Need = Max − Allocation</b>. Each turn a process requests resources; decide <b>GRANT</b> or <b>DENY</b> so the system stays <b>SAFE</b>.</p>
+      <p>Deny if the request exceeds that process's remaining Need, or exceeds what is currently Available. Otherwise pretend to grant it and run the safety check: repeatedly find a process whose Need fits within Available, let it finish and release everything it holds. If every process can finish, the state is safe → GRANT. If some process can never finish → the state is unsafe → DENY, even though the resources are physically free.</p>
+    </details>
+
+    <details class="help-sec"><summary>6 · Virtual Memory — Demand Paging</summary>
+      <p>Each reference shows a page number and whether it is a <b>read (R)</b> or a <b>write (W)</b>. Choose the correct outcome.</p>
+      <table class="help-table">
+        <tr><th>Outcome</th><th>When</th></tr>
+        <tr><td>HIT</td><td>The page is already in a frame. Nothing changes.</td></tr>
+        <tr><td>PURE FAULT</td><td>The page is legal but not loaded — the OS must fetch it. If all frames are full, FIFO picks the victim.</td></tr>
+        <tr><td>COW FAULT</td><td>A <b>write</b> to a page marked shared. The OS makes a private copy first, so the other process keeps the original.</td></tr>
+        <tr><td>PROTECTION FAULT</td><td>The reference is outside the process's valid page range (beyond <b>maxPage</b>) — an illegal access. The process is killed, not paged in.</td></tr>
+      </table>
+    </details>
+
+    <details class="help-sec"><summary>7 · File System Allocation</summary>
+      <p>A disk of numbered blocks, some already in use. Files arrive one at a time and must be placed <b>in order</b>. Click the free blocks you want, then press <b>CONFIRM ALLOCATION</b>. Any placement that obeys the method's rule counts as correct — you do not have to guess one specific layout.</p>
+      <table class="help-table">
+        <tr><th>Method</th><th>Legal placement</th></tr>
+        <tr><td>Contiguous</td><td>One unbroken run of adjacent free blocks, exactly the file's size.</td></tr>
+        <tr><td>Linked</td><td>Exactly <i>size</i> free blocks, anywhere on the disk. The links follow block order.</td></tr>
+        <tr><td>Indexed</td><td>One index block plus one block per data block = <i>size</i> + 1 free blocks. The lowest-numbered block you pick is the index block.</td></tr>
+      </table>
+      <p>Clicking a block that is already in use tells you so. If your earlier choices fragment the disk until the current file has nowhere legal to go, a <b>SKIP FILE</b> button appears so the run can still finish — but a skipped file scores nothing.</p>
+    </details>
+
+    <details class="help-sec"><summary>8 · Synchronization — the five topics</summary>
+      <p>This mode walks a real execution, one step at a time, and asks you to call what happens. Each topic is a separate run.</p>
+
+      <h4>The Critical-Section Problem</h4>
+      <p>Two processes interleave: <b>ENTER</b> the critical section, <b>EXIT</b> it, or do <b>WORK</b> outside it. For each event say whether it is <b>LEGAL</b> or a <b>VIOLATION</b>. It is a violation when a process enters while another is already inside (mutual exclusion broken), or when a process exits without holding the critical section. Work outside is always legal. The three requirements a solution must meet: <b>mutual exclusion</b> (never two inside at once), <b>progress</b> (someone can always get in if the section is free), and <b>bounded waiting</b> (no process waits forever).</p>
+
+      <h4>Peterson's Solution</h4>
+      <p>Each process <i>i</i> runs: <code>flag[i] = true; turn = j; while (flag[j] &amp;&amp; turn == j) ;</code> then the critical section, then <code>flag[i] = false;</code>. You are shown <b>flag[0]</b>, <b>flag[1]</b> and <b>turn</b> at the moment a process reaches its while-loop, and must say whether it <b>ENTERS</b> (the condition is false) or <b>SPINS</b> (the condition is true). Because a process only sets <code>turn</code> to the <i>other</i> process, both can never pass at once — that is how it guarantees mutual exclusion without any hardware help.</p>
+
+      <h4>Hardware Support for Synchronization (TSL / Swap)</h4>
+      <p>An atomic <b>TSL</b> (test-and-set-lock) instruction reads the lock and writes 1 in one indivisible step. Predict whether a process <b>ACQUIRES</b> the lock (TSL returned 0 — the lock was free) or <b>SPINS</b> (returned 1 — someone else holds it), and whether a release is legal. Releasing a lock you do not hold is an error. Because TSL is atomic, two processes can never both observe 0 — the second necessarily sees 1. That is the whole point of hardware support.</p>
+
+      <h4>Mutex Locks</h4>
+      <p>A mutex has <code>acquire()</code> and <code>release()</code>. For each call predict one of three outcomes: <b>ACQUIRES</b> (the mutex was free), <b>BLOCKS</b> (another process holds it, so this call waits), or <b>ERROR</b> (this process already holds it — a plain mutex is not recursive, so a second acquire is a bug, not a wait). A <b>release()</b> by a process that does not hold the mutex is also an error.</p>
+
+      <h4>Semaphores</h4>
+      <p>A counting semaphore <b>S</b> with two atomic operations: <b>P(S)</b> (wait) and <b>V(S)</b> (signal). P decrements S if S &gt; 0 and continues; if S is 0 it blocks and joins the queue, leaving S at 0. V increments S — unless a process is blocked, in which case that process is woken and immediately consumes the unit, so S stays the same. For each operation predict the value of S afterwards. A binary semaphore (S limited to 0/1) behaves like a mutex.</p>
+    </details>
+  </div>
+</div>
+</div>
 </main><script src="audio.js"></script><script src="algos.js"></script><script src="app.js"></script></body></html>

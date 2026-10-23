@@ -11,12 +11,12 @@ function goHome(){
   [typeof interval!=='undefined'&&interval, typeof memInterval!=='undefined'&&memInterval,
    typeof diskInterval!=='undefined'&&diskInterval, typeof allocInterval!=='undefined'&&allocInterval,
    typeof dlInterval!=='undefined'&&dlInterval, typeof vmInterval!=='undefined'&&vmInterval,
-   typeof fsInterval!=='undefined'&&fsInterval].forEach(t=>clearInterval(t));
-  ['game','memory-game','disk-game','alloc-game','deadlock-game','vm-game','fs-game','result'].forEach(id=>{const el=document.getElementById(id); if(el)el.hidden=true;});
+   typeof fsInterval!=='undefined'&&fsInterval, typeof syncInterval!=='undefined'&&syncInterval].forEach(t=>clearInterval(t));
+  ['game','memory-game','disk-game','alloc-game','deadlock-game','vm-game','fs-game','sync-game','result'].forEach(id=>{const el=document.getElementById(id); if(el)el.hidden=true;});
   $('#welcome').hidden=false;
   // don't clear name/USN — player stays logged in; only mode resets to placeholder
   const ms=$('#mode-select'); if(ms)ms.value='';
-  ['algo-select-container','memory-algo-container','disk-algo-container','alloc-algo-container'].forEach(id=>{const el=document.getElementById(id); if(el)el.hidden=true;});
+  ['algo-select-container','memory-algo-container','disk-algo-container','alloc-algo-container','deadlock-algo-container','vm-algo-container','fs-algo-container','sync-algo-container'].forEach(id=>{const el=document.getElementById(id); if(el)el.hidden=true;});
   const d=$('#algo-desc'); if(d)d.textContent='Select a game mode to choose your algorithm.';
   refreshXpUI(); leaderboard(); syncLeaderboardVisibility();
 }
@@ -34,6 +34,9 @@ function syncLeaderboardVisibility(){
 
 const state = { actions: [], score: 0, combo: 0, stability: 100, now: 0, started: 0, context: 0, expected: [], bestStreak: 0 };
 const fmt = n => String(Math.floor(n / 60)).padStart(2, '0') + ':' + String(Math.floor(n % 60)).padStart(2, '0');
+// Wipe the result line that sits under the hint button. Only used when a fresh
+// run starts — during play that line stays up until the next action replaces it.
+function clearFeedback(id){ const el=document.getElementById(id); if(el){ el.hidden=true; el.innerHTML=''; } }
 
 const algoInfo = {
   fcfs: { name: 'First-Come-First-Served', short: 'FCFS', desc: 'Pick the process that arrived earliest.' },
@@ -178,6 +181,7 @@ async function start(player){
   if(mode==='deadlock'){ startDeadlock(player); return; }
   if(mode==='vm'){ startVM(player); return; }
   if(mode==='fs'){ startFS(player); return; }
+  if(mode==='sync'){ startSync(player); return; }
 
   const res=await fetch('/api/session',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({player:playerInfo,algorithm,level:1})});
   game=await res.json();
@@ -536,11 +540,11 @@ const vmAlgoInfo = {
 };
 const fsAlgoInfo = {
   contiguous: { name: 'Contiguous Allocation', short: 'CONTIGUOUS',
-    desc: 'Each file occupies one unbroken run of blocks. Click a consecutive run.' },
+    desc: 'CONTIGUOUS: Select exactly the file’s number of adjacent free blocks in one unbroken run.' },
   linked: { name: 'Linked Allocation', short: 'LINKED',
-    desc: 'Each file is a chain of free blocks, taken in order. Click any free blocks, in ascending order.' },
+    desc: 'LINKED: Select exactly the file’s number of free blocks. They can be separated; the links follow block-number order.' },
   indexed: { name: 'Indexed Allocation', short: 'INDEXED',
-    desc: 'One index block plus the data blocks, all from free blocks in ascending order. Click size+1 blocks.' }
+    desc: 'INDEXED: Select one index block plus one block per data block. The lowest-numbered selection is the index block.' }
 };
 const MODE_LABEL = { scheduler:'CPU:', memory:'MEM:', disk:'DISK:', alloc:'ALLOC:',
   deadlock:'DL:', vm:'VM:', fs:'FS:' };
@@ -785,6 +789,7 @@ function startDeadlock(player){
       $('#dl-mission-label').textContent=`DEADLOCK SHIFT ${g.level} · ${info.short}`;
       $('#welcome').hidden=true; syncLeaderboardVisibility();
       $('#deadlock-game').hidden=false;
+      clearFeedback('dl-feedback');
       renderDeadlock();
       clearInterval(dlInterval);
       dlInterval=setInterval(()=>$('#dl-timer').textContent=fmt((Date.now()-dlState.started)/1000),1000);
@@ -794,17 +799,24 @@ function startDeadlock(player){
 
 // Build a list of requests: a mix the player must grant or deny.
 function generateDlRequests(g){
-  const reqs=[]; const n=g.allocation.length, m=g.available.length;
+  const reqs=[]; const m=g.available.length;
   const work={ allocation:g.allocation.map(r=>[...r]), available:[...g.available] };
-  const need=()=>work.allocation.map((row,i)=>row.map((a,j)=>g.max[i][j]-a));
+  const needOf=()=>work.allocation.map((row,i)=>row.map((a,j)=>g.max[i][j]-a));
   for(let k=0;k<6;k++){
-    const pid=Math.floor(Math.random()*n);
-    const nd=need()[pid];
-    // half the time ask for something clearly available, half borderline
-    const req=nd.map((v,j)=> v<=0 ? 0 : 1+Math.floor(Math.random()*Math.max(1,v)));
-    const over=Math.random()<0.35;
-    const finalReq=over ? req.map((v,j)=>v+Math.floor(Math.random()*2)+1) : req;
-    reqs.push({ pid, req:finalReq });
+    const nd=needOf();
+    // Only ask a process that still needs something, so no request is all-zero.
+    const cands=nd.map((row,i)=>row.some(v=>v>0)?i:-1).filter(i=>i>=0);
+    if(!cands.length) break;
+    const pid=cands[Math.floor(Math.random()*cands.length)];
+    // Ask for part of what it still needs (never more than Need)…
+    let req=nd[pid].map(v=> v<=0 ? 0 : 1+Math.floor(Math.random()*v));
+    // …but ~35% of the time push it past what is currently free, forcing a DENY.
+    if(Math.random()<0.35) req=req.map(v=> v>0 ? v+1+Math.floor(Math.random()*2) : v);
+    reqs.push({ pid, req });
+    // Advance along the CORRECT path, so later requests are computed against the
+    // state the player actually reaches rather than the initial state every time.
+    const chk=bankersRequestLocal(work.allocation,g.max,work.available,pid,req);
+    if(chk.grant){ for(let j=0;j<m;j++){ work.allocation[pid][j]+=req[j]; work.available[j]-=req[j]; } }
   }
   return reqs;
 }
@@ -844,27 +856,29 @@ function renderDeadlock(){
 
   // resource state table
   const m=g.available.length;
-  let html='<table class="dl-table"><tr><th>PROC</th>';
-  for(let j=0;j<m;j++)html+=`<th>R${j} ALLOC</th>`;
-  for(let j=0;j<m;j++)html+=`<th>R${j} MAX</th>`;
-  html+='</tr>';
-  g.allocation.forEach((row,i)=>{
-    html+=`<tr><td><b>P${i}</b></td>`;
+  let html='<div class="dl-table-wrap"><table class="dl-table"><thead><tr><th scope="col">Process</th>';
+  for(let j=0;j<m;j++)html+=`<th scope="col">R${j}<small>Alloc</small></th>`;
+  for(let j=0;j<m;j++)html+=`<th scope="col">R${j}<small>Max</small></th>`;
+  for(let j=0;j<m;j++)html+=`<th scope="col">R${j}<small>Need</small></th>`;
+  html+='</tr></thead><tbody>';
+  st.alloc.forEach((row,i)=>{
+    html+=`<tr><th scope="row">P${i}</th>`;
     row.forEach(v=>{ html+=`<td class="alloc">${v}</td>`; });
     g.max[i].forEach(v=>{ html+=`<td class="maxc">${v}</td>`; });
+    row.forEach((v,j)=>{ html+=`<td class="need">${g.max[i][j]-v}</td>`; });
     html+='</tr>';
   });
-  html+='<tr><td><b>AVAIL</b></td>';
+  html+='<tr class="available-row"><th scope="row">Available</th>';
   for(let j=0;j<m;j++)html+=`<td class="avail">${st.avail[j]}</td>`;
-  for(let j=0;j<m;j++)html+='<td class="maxc">—</td>';
-  html+='</tr></table>';
+  for(let j=0;j<m*2;j++)html+='<td class="maxc">—</td>';
+  html+='</tr></tbody></table></div>';
   $('#dl-state').innerHTML=html;
 
   // current request
   const cur=st.requests[st.idx];
   if(!cur){ finishDeadlock(); return; }
-  $('#dl-request').innerHTML=`<div class="big-req">P${cur.pid} requests
-    <span class="req-vec">(${cur.req.join(', ')})</span></div>
+  $('#dl-request').innerHTML=`<div class="big-req"><b>P${cur.pid}</b> requests</div>
+    <div class="dl-req-resources">${cur.req.map((v,j)=>`<span>R${j}<b>${v}</b></span>`).join('')}</div>
     <div class="req-progress">REQUEST ${st.idx+1} / ${st.requests.length}</div>`;
 
   $('#dl-score').textContent=st.score;
@@ -893,12 +907,13 @@ function answerDeadlock(grant){
   const fb=$('#dl-feedback');
   fb.hidden=false;
   fb.className='predict-result '+(correct?'good':'bad');
-  const reasonTxt = chk.reason==='exceeds-need' ? 'request exceeds its maximum need'
-    : chk.reason==='not-available' ? 'resources not currently available'
-    : chk.reason==='safe' ? 'resulting state is SAFE' : 'resulting state would be UNSAFE';
-  fb.innerHTML=`${correct?'✓ Correct':'✗ Wrong'} — ${chk.grant?'GRANT':'DENY'}. ${reasonTxt}.`;
+  const reasonTxt = chk.reason==='exceeds-need' ? `DENY: the request is above P${cur.pid}'s remaining Need. A process cannot receive more than its declared maximum.`
+    : chk.reason==='not-available' ? 'DENY: the system does not currently have enough Available resources.'
+    : chk.reason==='safe' ? `GRANT: the simulated state is SAFE. Safe completion order: ${chk.seq.map(pid=>`P${pid}`).join(' → ')}.`
+    : `DENY: after this simulated grant, no safe order lets every process finish. The state would be unsafe.`;
+  fb.innerHTML=`<strong>${correct?'✓ Correct':'✗ Not quite'} · ${chk.grant?'GRANT':'DENY'}</strong><span>${reasonTxt}</span>`;
 
-  logDl(cur, chk.grant, correct);
+  logDl(cur, chk, correct);
 
   setTimeout(()=>{
     dlState.locked=false;
@@ -908,14 +923,15 @@ function answerDeadlock(grant){
   }, 1100);
 }
 
-function logDl(cur,shouldGrant,correct){
+function logDl(cur,check,correct){
   const log=$('#dl-log');
   if(!log)return;
   const el=document.createElement('div');
   el.className='log-entry '+(correct?'good':'bad');
+  const outcome=check.grant ? `SAFE · order ${check.seq.map(pid=>`P${pid}`).join(' → ')}` : `DENY · ${check.reason==='exceeds-need'?'above Need':check.reason==='not-available'?'not Available':'unsafe state'}`;
   el.innerHTML=`<span class="step">P${cur.pid}</span>
-    <span class="page">req (${cur.req.join(',')})</span>
-    <span class="${shouldGrant?'good':'bad'}">${shouldGrant?'GRANT':'DENY'}</span>`;
+    <span class="page">Request ${cur.req.map((v,j)=>`R${j}:${v}`).join(' · ')}</span>
+    <span class="${check.grant?'good':'bad'}">${outcome}</span>`;
   log.appendChild(el);
   log.scrollTop=log.scrollHeight;
 }
@@ -950,10 +966,10 @@ async function finishDeadlock(){
 // ==================== VIRTUAL MEMORY / DEMAND PAGING GAME ====================
 let vmGame, vmState, vmInterval;
 const VM_CHOICES = [
-  { key:'hit',  label:'HIT',  cls:'hit' },
-  { key:'pure', label:'FAULT · PURE', cls:'miss' },
-  { key:'cow',  label:'FAULT · COW',  cls:'miss' },
-  { key:'prot', label:'FAULT · PROT', cls:'miss' }
+  { key:'hit',  label:'HIT',  desc:'Page is loaded and access is allowed.', cls:'hit' },
+  { key:'pure', label:'PURE FAULT', desc:'Page is not loaded; bring it into memory.', cls:'miss' },
+  { key:'cow',  label:'COW FAULT',  desc:'Write to a shared page; copy it first.', cls:'miss' },
+  { key:'prot', label:'PROTECTION FAULT', desc:'Page is outside this process’s allowed range.', cls:'miss' }
 ];
 
 function startVM(player){
@@ -971,6 +987,7 @@ function startVM(player){
       $('#vm-mission-label').textContent=`VM SHIFT ${g.level} · ${info.short}`;
       $('#welcome').hidden=true; syncLeaderboardVisibility();
       $('#vm-game').hidden=false;
+      clearFeedback('vm-feedback');
       renderVM();
       clearInterval(vmInterval);
       vmInterval=setInterval(()=>$('#vm-timer').textContent=fmt((Date.now()-vmState.started)/1000),1000);
@@ -1012,8 +1029,8 @@ function renderVM(){
   $('#vm-frames').innerHTML=Array.from({length:g.frames},(_,i)=>{
     const p=curFrames[i];
     return p===undefined
-      ? '<div class="frame empty"><span class="page-num">—</span></div>'
-      : `<div class="frame filled"><span class="page-num">${p}</span></div>`;
+      ? `<div class="frame empty"><span class="frame-name">FRAME ${i+1}</span><span class="page-num">—</span></div>`
+      : `<div class="frame filled"><span class="frame-name">FRAME ${i+1}</span><span class="page-num">${p}</span></div>`;
   }).join('');
 
   // reference stream
@@ -1026,14 +1043,13 @@ function renderVM(){
 
   if(st.idx>=steps.length){ finishVM(); return; }
   const step=steps[st.idx];
-  const isShared=(g.shared||[]).includes(step.page) && st.idx<g.refs.findIndex((p,i)=>i>st.idx&&p===step.page?true:false)+1;
-  $('#vm-current').innerHTML=`<div class="big-req">Page ${step.page}
-     <span class="req-vec">${step.access==='W'?'WRITE':'READ'}</span></div>
-     <div class="req-progress">REF ${st.idx+1} / ${steps.length}</div>`;
+  $('#vm-current').innerHTML=`<div class="vm-current-page">Page ${step.page}</div>
+     <span class="vm-access">${step.access==='W'?'WRITE':'READ'}</span>
+     <div class="req-progress">REFERENCE ${st.idx+1} OF ${steps.length}</div>`;
 
   $('#vm-choices').innerHTML=VM_CHOICES.map(c=>
     `<button class="pred-btn ${c.cls}" data-vm="${c.key}">
-       <span class="btn-label">${c.label}</span></button>`).join('');
+       <span class="btn-label">${c.label}</span><span class="btn-desc">${c.desc}</span></button>`).join('');
 
   $('#vm-score').textContent=st.score;
   $('#vm-faults').textContent=steps.slice(0,st.idx).filter(x=>!x.hit).length;
@@ -1055,8 +1071,11 @@ function answerVM(key){
   const fb=$('#vm-feedback');
   fb.hidden=false;
   fb.className='predict-result '+(correct?'good':'bad');
-  const actual = step.hit ? 'a HIT' : `a ${step.fault} fault`;
-  fb.innerHTML=`${correct?'✓ Correct':'✗ Wrong'} — it was ${actual}.`;
+  const actual = step.hit ? 'HIT — this page is already loaded and the access is allowed.'
+    : step.fault==='PURE' ? 'PURE fault — this page was not in memory, so it must be loaded.'
+    : step.fault==='COW' ? 'COW (copy-on-write) fault — this shared page was written, so the OS must make a private copy first.'
+    : 'PROTECTION fault — this page is outside the process’s allowed range.';
+  fb.innerHTML=`<strong>${correct?'✓ Correct':'✗ Not quite'}</strong><span>${actual}</span>`;
 
   logVM(step,correct);
 
@@ -1073,9 +1092,10 @@ function logVM(step,correct){
   if(!log)return;
   const el=document.createElement('div');
   el.className='log-entry '+(correct?'good':'bad');
-  el.innerHTML=`<span class="step">P${step.page}</span>
-    <span class="page">${step.access}</span>
-    <span class="${step.hit?'good':'bad'}">${step.hit?'HIT':step.fault}</span>`;
+  const result=step.hit?'HIT':step.fault==='COW'?'COW · copy shared page':step.fault==='PROT'?'PROTECTION · illegal page':'PURE · load page';
+  el.innerHTML=`<span class="step">Page ${step.page}</span>
+    <span class="page">${step.access==='W'?'WRITE':'READ'}</span>
+    <span class="${step.hit?'good':'bad'}">${result}</span>`;
   log.appendChild(el); log.scrollTop=log.scrollHeight;
 }
 
@@ -1122,9 +1142,10 @@ function startFS(player){
                 selected:[], disk:[...g.disk], started:Date.now(), locked:false };
       const info=fsAlgoInfo[g.algorithm]||fsAlgoInfo.contiguous;
       $('#fs-mission-label').textContent=`FILE SHIFT ${g.level} · ${info.short}`;
-      $('#fs-notice').innerHTML=`${info.desc}`;
+      $('#fs-notice').textContent=info.desc;
       $('#welcome').hidden=true; syncLeaderboardVisibility();
       $('#fs-game').hidden=false;
+      clearFeedback('fs-feedback');
       renderFS();
       clearInterval(fsInterval);
       fsInterval=setInterval(()=>$('#fs-timer').textContent=fmt((Date.now()-fsState.started)/1000),1000);
@@ -1138,26 +1159,63 @@ function renderFS(){
 
   $('#fs-disk').innerHTML=st.disk.map((free,i)=>{
     const sel=st.selected.includes(i);
-    const cls = !free ? 'used' : sel ? 'sel' : 'free';
-    return `<div class="fs-block ${cls}" data-b="${i}" ${free?'':''}>${i}</div>`;
+    const isIndex=sel&&g.algorithm==='indexed'&&i===st.selected[0];
+    const cls = !free ? 'used' : sel ? `sel${isIndex?' index-block':''}` : 'free';
+    const label=!free?'in use':isIndex?'selected as index block':sel?'selected':'free';
+    return `<div class="fs-block ${cls}" data-b="${i}" aria-label="Block ${i+1}, ${label}">${i+1}${isIndex?'<small>INDEX</small>':''}</div>`;
   }).join('');
 
   $('#fs-files').innerHTML=g.files.map((f,i)=>{
     const done=i<st.idx, cur=i===st.idx;
     const cls=done?'done':cur?'cur':'';
-    return `<div class="fs-file ${cls}">${done?'✓ ':''}File ${f.id} — ${f.size} block${f.size>1?'s':''}</div>`;
+    const sizeInfo=g.algorithm==='indexed'
+      ? `${f.size} data + 1 index = ${f.size+1} total blocks`
+      : `${f.size} blocks total`;
+    return `<div class="fs-file ${cls}"><strong>${done?'✓ ':''}File ${f.id}${cur?' · CURRENT':''}</strong><span>${sizeInfo}</span></div>`;
   }).join('');
 
-  $('#fs-selected').textContent = st.selected.length ? st.selected.join(', ') : '—';
+  const selected=st.selected.map(b=>b+1);
+  const selectedLabel=$('#fs-selected-label');
+  if(g.algorithm==='indexed'){
+    selectedLabel.textContent='Index block · data blocks';
+    $('#fs-selected').textContent=selected.length?`Index: ${selected[0]} · Data: ${selected.slice(1).join(', ')||'—'}`:'None';
+  } else {
+    selectedLabel.textContent=g.algorithm==='linked'?'Chain in block order':'Selected run (must be adjacent)';
+    $('#fs-selected').textContent=selected.length?`${selected.length} block${selected.length===1?'':'s'}: ${selected.join(', ')}`:'None';
+  }
+  $('#fs-free-count').textContent=`${st.disk.filter(Boolean).length} of ${g.diskSize} blocks free`;
   $('#fs-score').textContent=st.score;
-  $('#fs-progress').textContent=`${st.idx}/${g.files.length}`;
-
+  $('#fs-progress').textContent=`${st.idx+1}/${g.files.length}`;
+  // An earlier choice can fragment the disk until the current file has nowhere
+  // legal to go. Offer a skip so the run can always finish instead of dead-ending.
+  const room=fsHasPlacement();
+  const skipBtn=$('#fs-skip'); if(skipBtn) skipBtn.hidden=room;
   if(st.idx>=g.files.length){ finishFS(); return; }
+}
+
+// Is there at least one legal placement for the current file on the live disk?
+function fsHasPlacement(){
+  const g=fsGame, st=fsState;
+  if(!g||!st) return true;
+  const file=g.files[st.idx]; if(!file) return true;
+  const need=g.algorithm==='indexed'?file.size+1:file.size;
+  if(g.algorithm==='contiguous'){
+    let run=0;
+    for(let i=0;i<st.disk.length;i++){ run = st.disk[i] ? run+1 : 0; if(run>=need) return true; }
+    return false;
+  }
+  return st.disk.filter(Boolean).length>=need;
 }
 
 function pickFsBlock(i){
   const st=fsState; if(!st||st.locked)return;
-  if(!st.disk[i])return;                 // already used
+  if(!st.disk[i]){
+    // Block already allocated — say so rather than silently swallowing the click.
+    const fb=$('#fs-feedback');
+    if(fb){ fb.hidden=false; fb.className='predict-result bad'; fb.innerHTML=`Block ${i+1} is already in use — pick a free block.`; }
+    AudioFX.lose(); shake('soft');
+    return;
+  }
   const pos=st.selected.indexOf(i);
   if(pos>=0) st.selected.splice(pos,1);
   else st.selected.push(i);
@@ -1171,38 +1229,36 @@ function confirmFs(){
   if(!g||!st||st.locked)return;
   const file=g.files[st.idx];
   if(!file)return;
-  const info=fsAlgoInfo[g.algorithm]||fsAlgoInfo.contiguous;
 
-  // client-side validation of the shape
-  let shapeOk=true, why='';
-  if(g.algorithm==='contiguous'){
-    if(st.selected.length!==file.size){ shapeOk=false; why=`contiguous file needs exactly ${file.size} blocks`; }
-    else { for(let k=1;k<st.selected.length;k++) if(st.selected[k]!==st.selected[k-1]+1){ shapeOk=false; why='blocks must be consecutive'; break; } }
-  } else if(g.algorithm==='linked'){
-    if(st.selected.length!==file.size){ shapeOk=false; why=`linked file needs exactly ${file.size} blocks`; }
-  } else { // indexed
-    if(st.selected.length!==file.size+1){ shapeOk=false; why=`indexed file needs ${file.size+1} blocks (${file.size} data + 1 index)`; }
+  // Grading rule: ANY placement that obeys the strategy's stated rule counts as
+  // correct — contiguous = one unbroken run of `size` free blocks, linked =
+  // `size` free blocks anywhere, indexed = 1 index + `size` data blocks. Checked
+  // against the disk as it stands BEFORE this selection consumes its blocks.
+  if(!st.selected.length){
+    AudioFX.lose(); const fb=$('#fs-feedback');
+    fb.hidden=false; fb.className='predict-result bad';
+    fb.innerHTML='✗ Select some free blocks first.'; return;
   }
-  if(!shapeOk){ AudioFX.lose(); const fb=$('#fs-feedback'); fb.hidden=false; fb.className='predict-result bad'; fb.innerHTML='✗ '+why; return; }
+  const correct = fsPlacementOk(st.disk, st.selected, file, g.algorithm);
+  if(!correct){
+    const need=g.algorithm==='indexed'?file.size+1:file.size;
+    let why;
+    if(st.selected.length!==need) why=`File ${file.id} needs exactly ${need} block${need===1?'':'s'} — you picked ${st.selected.length}.`;
+    else if(g.algorithm==='contiguous') why='Contiguous allocation needs one unbroken run of adjacent free blocks.';
+    else why='Those blocks are not all free.';
+    AudioFX.lose(); const fb=$('#fs-feedback');
+    fb.hidden=false; fb.className='predict-result bad'; fb.innerHTML='✗ '+why;
+    return;
+  }
 
   st.locked=true;
   st.answers.push([...st.selected]);
   st.selected.forEach(b=>{ st.disk[b]=false; });
-
-  // local expected (mirrors fileAllocSim) for immediate feedback
-  const expected=fileAllocLocal([...st.disk], g.files, g.algorithm);
-  const expStep=expected[st.idx];
-  const expBlocks=expStep && expStep.blocks ? expStep.blocks : null;
-  const correct = !!expBlocks && expBlocks.length===st.answers[st.idx].length &&
-                  expBlocks.every((b,k)=>b===st.answers[st.idx][k]);
-  if(correct){ st.score+=80; st.streak++; st.bestStreak=Math.max(st.bestStreak,st.streak); AudioFX.win(); }
-  else { st.streak=0; AudioFX.lose(); shake('soft'); }
+  st.score+=80; st.streak++; st.bestStreak=Math.max(st.bestStreak,st.streak); AudioFX.win();
 
   const fb=$('#fs-feedback');
-  fb.hidden=false; fb.className='predict-result '+(correct?'good':'bad');
-  fb.innerHTML=correct
-    ? `✓ Correct — blocks ${st.answers[st.idx].join(', ')}.`
-    : `✓ Placed. Optimal was ${expBlocks?expBlocks.join(', '):'no fit'}.`;
+  fb.hidden=false; fb.className='predict-result good';
+  fb.innerHTML=`✓ Correct — ${g.algorithm==='indexed'?`index block ${st.answers[st.idx][0]+1}, data blocks ${st.answers[st.idx].slice(1).map(b=>b+1).join(', ')}`:`blocks ${st.answers[st.idx].map(b=>b+1).join(', ')}`}.`;
 
   logFS(file, st.answers[st.idx], correct);
 
@@ -1241,9 +1297,14 @@ function logFS(file, blocks, correct){
   const log=$('#fs-log'); if(!log)return;
   const el=document.createElement('div');
   el.className='log-entry '+(correct?'good':'bad');
-  el.innerHTML=`<span class="step">F${file.id}</span>
-    <span class="page">${file.size} blk</span>
-    <span class="${correct?'good':'bad'}">${blocks.join(',')}</span>`;
+  const placement=!blocks||!blocks.length
+    ? 'no placement — skipped'
+    : fsGame.algorithm==='indexed'
+      ? `Index ${blocks[0]+1} · Data ${blocks.slice(1).map(b=>b+1).join(', ')}`
+      : `Disk blocks ${blocks.map(b=>b+1).join(', ')}`;
+  el.innerHTML=`<span class="step">File ${file.id}</span>
+    <span class="page">${file.size} data block${file.size===1?'':'s'}</span>
+    <span class="${correct?'good':'bad'}">${placement}</span>`;
   log.appendChild(el); log.scrollTop=log.scrollHeight;
 }
 
@@ -1307,6 +1368,205 @@ $('#player-form').onsubmit=e=>{
   start(data);
 };
 
+// ==================== SYNCHRONIZATION LAB ====================
+let syncGame, syncState, syncInterval;
+const syncAlgoInfo = {
+  critical:  { name:'The Critical-Section Problem', short:'CRITICAL SECTION', desc:'Call whether each event in an interleaving keeps mutual exclusion.' },
+  peterson:  { name:"Peterson's Solution", short:"PETERSON'S SOLUTION", desc:'Predict whether a process gets past its while-loop into the critical section.' },
+  hardware:  { name:'Hardware Support for Synchronization (TSL / Swap)', short:'HARDWARE TSL', desc:'Predict what the atomic test-and-set does to the lock.' },
+  mutex:     { name:'Mutex Locks', short:'MUTEX LOCKS', desc:'Acquire and release a mutex, and spot the illegal calls.' },
+  semaphore: { name:'Semaphores', short:'SEMAPHORES', desc:'Track the semaphore value across P and V operations.' }
+};
+
+// The questions come from algos.js (loaded before this file), so the browser and
+// the server always agree on what the right answer is.
+function syncSteps(){
+  if(!syncGame) return [];
+  return syncSim(syncGame.algorithm, syncGame.puzzle).steps;
+}
+
+async function startSync(player){
+  const {mode,...playerInfo}=player;
+  const algorithm=$('#sync-algo-select').value;
+  try{
+    const res=await fetch('/api/session',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({player:playerInfo,algorithm,level:1,mode})});
+    const g=await res.json();
+    syncGame=g;
+    syncState={ idx:0, score:0, streak:0, bestStreak:0, answers:[], started:Date.now(), locked:false };
+    const info=syncAlgoInfo[g.algorithm]||syncAlgoInfo.critical;
+    $('#sync-mission-label').textContent=`SYNC LAB · ${info.short}`;
+    $('#sync-notice').textContent=info.desc;
+    $('#welcome').hidden=true; syncLeaderboardVisibility();
+    $('#sync-game').hidden=false;
+    clearFeedback('sync-feedback');
+    renderSync();
+    clearInterval(syncInterval);
+    syncInterval=setInterval(()=>$('#sync-timer').textContent=fmt((Date.now()-syncState.started)/1000),1000);
+  }catch(e){ console.error(e); alert('Could not start the synchronization mission.'); }
+}
+
+// A small picture of the machine for each topic. The point of this mode is
+// understanding, so every question shows the state visually as well as in words.
+function syncViz(step, algorithm){
+  const st=step.state||[];
+  const get=k=>{const f=st.find(s=>s.k===k); return f?String(f.v):'';};
+  if(algorithm==='critical'){
+    const inside=get('Critical section');
+    const who=inside==='empty'?[]:inside.replace(/\s*inside$/,'').split(',').map(s=>s.trim()).filter(Boolean);
+    const outside=['P0','P1'].filter(p=>who.indexOf(p)<0);
+    const chip=(p,inCS)=>`<span class="proc${inCS?' in':''}${p==='P1'?' alt':''}">${p}</span>`;
+    return `<div class="viz">
+      <div class="viz-row"><span class="viz-lbl">OUTSIDE</span><div class="viz-slots">${outside.map(p=>chip(p,false)).join('')||'<span class="viz-none">—</span>'}</div></div>
+      <div class="viz-box"><span class="viz-lbl">CRITICAL SECTION</span><div class="viz-slots">${who.map(p=>chip(p,true)).join('')||'<span class="viz-none">empty</span>'}</div></div>
+    </div>`;
+  }
+  if(algorithm==='peterson'){
+    const f=[get('flag[0]')==='true', get('flag[1]')==='true'];
+    const turn=get('turn');
+    const card=p=>{
+      const other=1-p;
+      const spin=f[other]&&turn===String(other);
+      return `<div class="viz-card${spin?' blocked':''}">
+        <b>P${p}</b>
+        <span>flag[${p}] = <em>${f[p]}</em></span>
+        <span>turn = <em>${turn}</em></span>
+        <span class="tag">${spin?'SPINNING':(f[p]?'READY TO CHECK':'NOT TRYING YET')}</span>
+      </div>`;
+    };
+    return `<div class="viz viz-cards">${card(0)}${card(1)}</div>`;
+  }
+  if(algorithm==='hardware'||algorithm==='mutex'){
+    const free=algorithm==='hardware' ? get('Held by')==='nobody' : get('Mutex')==='free';
+    const holder=algorithm==='hardware' ? get('Held by') : get('Mutex').replace('held by ','');
+    return `<div class="viz viz-lock">
+      <div class="lock-badge${free?'':' shut'}"><b>${free?'FREE':'LOCKED'}</b><span>${free?'nobody holds it':'held by '+holder}</span></div>
+      <div class="viz-note">${algorithm==='hardware'?'one atomic lock word in memory':'mutex object'}</div>
+    </div>`;
+  }
+  if(algorithm==='semaphore'){
+    const s=Number(get('Semaphore S'))||0, blocked=Number(get('Blocked'))||0;
+    return `<div class="viz viz-sem">
+      <div class="sem-count"><b>${s}</b><span>units in S</span></div>
+      <div class="sem-queue"><span class="viz-lbl">BLOCKED QUEUE</span><div class="viz-slots">${Array.from({length:blocked},()=>'<span class="proc alt">waiting</span>').join('')||'<span class="viz-none">empty</span>'}</div></div>
+    </div>`;
+  }
+  return '';
+}
+
+function renderSync(){
+  const g=syncGame, st=syncState;
+  if(!g||!st)return;
+  const steps=syncSteps(); const step=steps[st.idx];
+  if(!step){ finishSync(); return; }
+
+  $('#sync-state').innerHTML=(step.state||[]).map(s=>
+    `<div class="st"><span>${s.k}</span><b>${s.v}</b></div>`).join('');
+  $('#sync-viz').innerHTML=syncViz(step, g.algorithm);
+  const tr=step.trace||[];
+  $('#sync-trace').innerHTML=tr.length
+    ? tr.map((t,i)=>`<span class="${i===tr.length-1?'now':''}">${t}</span>`).join('')
+    : '<span>Nothing has run yet — this is the very first event.</span>';
+  $('#sync-question').innerHTML=step.prompt;
+  $('#sync-choices').innerHTML=step.options.map(o=>
+    `<button class="pred-btn" data-sync="${o.key}"><span class="btn-label">${o.label}</span>${o.desc?`<span class="btn-desc">${o.desc}</span>`:''}</button>`).join('');
+  $('#sync-score').textContent=st.score;
+  $('#sync-progress').textContent=`${st.idx+1}/${steps.length}`;
+}
+
+function answerSync(key){
+  const g=syncGame, st=syncState;
+  if(!g||!st||st.locked)return;
+  const steps=syncSteps(); const step=steps[st.idx];
+  if(!step)return;
+  const correct=key===step.answerKey;
+  const chosen=((step.options.find(o=>o.key===key)||{}).label)||key;
+  st.locked=true;
+  st.answers.push(key);
+  if(correct){ st.score+=70; st.streak++; st.bestStreak=Math.max(st.bestStreak,st.streak); AudioFX.win(); }
+  else { st.streak=0; AudioFX.lose(); shake('soft'); }
+
+  const fb=$('#sync-feedback');
+  fb.hidden=false; fb.className='predict-result '+(correct?'good':'bad');
+  fb.innerHTML=correct
+    ? `<strong>✓ Correct</strong><span>${step.explain}</span>`
+    : `<strong>✗ Not quite — you called ${chosen}.</strong><span>${step.explain}</span>`;
+
+  logSync(st.idx, chosen, correct, step);
+  setTimeout(()=>{
+    st.locked=false; st.idx++;
+    if(st.idx>=steps.length){ finishSync(); return; }
+    renderSync();
+  },1100);
+}
+
+function logSync(index, chosen, correct, step){
+  const log=$('#sync-log'); if(!log)return;
+  const el=document.createElement('div');
+  el.className='log-entry '+(correct?'good':'bad');
+  el.innerHTML=`<span class="step">STEP ${index+1}</span>
+    <span class="${correct?'good':'bad'}">${correct?'✓':'✗'} ${chosen} — ${step.explain}</span>`;
+  log.appendChild(el); log.scrollTop=log.scrollHeight;
+}
+
+async function finishSync(){
+  clearInterval(syncInterval);
+  if(!syncGame||!syncState)return;
+  $('#sync-game').hidden=true;
+  const elapsed=Math.round((Date.now()-syncState.started)/1000);
+  let r;
+  try{
+    const res=await fetch('/api/submit',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({sessionId:syncGame.id,actions:syncState.answers,elapsed})});
+    r=await res.json();
+  }catch(e){ console.error(e); alert('Could not submit the synchronization run.'); return; }
+  const perfect=r.correct===r.total;
+  addXP(r.score); refreshXpUI();
+  if(typeof recordMission==='function') recordMission({mode:'sync',algo:syncGame.algorithm,perfect,bestStreak:syncState.bestStreak,elapsed,hintsUsed:hintsUsedThisRun});
+  if(typeof checkAchievements==='function') checkAchievements({completedDelta:1,perfect,bestStreak:syncState.bestStreak,elapsed,hintsUsed:hintsUsedThisRun,modesWon:{scheduler:false,memory:false},algoWins:[syncGame.algorithm]});
+  if(perfect){AudioFX.win();confetti(60);}else{AudioFX.win();}
+  $('#result').hidden=false; syncLeaderboardVisibility();
+  $('#result').innerHTML=`
+    <h2>${perfect?'⭐ CONCURRENCY MASTER':r.correct>=r.total/2?'SYNCHRONIZED':'RACE CONDITION'}</h2>
+    <p><b>${(syncAlgoInfo[syncGame.algorithm]||syncAlgoInfo.critical).short}</b> · ${r.correct}/${r.total} calls right</p>
+    <div class="result-stats">
+      <div class="rs"><b>${r.correct}/${r.total}</b><span>CORRECT</span></div>
+      <div class="rs"><b>×${syncState.bestStreak}</b><span>BEST STREAK</span></div>
+      <div class="rs"><b>+${r.score}</b><span>XP EARNED</span></div>
+    </div>
+    <button id="sync-again">BACK TO MISSIONS</button>`;
+  const again=$('#sync-again');
+  if(again) again.onclick=()=>{ AudioFX.click(); goHome(); };
+}
+
+// ==================== HELP PAGE ====================
+function buildHelpToc(){
+  const toc=$('#help-toc'); if(!toc||toc.dataset.built)return;
+  const secs=[...document.querySelectorAll('#help-overlay .help-sec')];
+  toc.innerHTML=secs.map((s,i)=>{
+    s.id='help-sec-'+i;
+    const title=(s.querySelector('summary').textContent||'').trim().replace(/^\d+\s*·\s*/,'');
+    return `<a href="#help-sec-${i}">${title}</a>`;
+  }).join('');
+  toc.dataset.built='1';
+  toc.onclick=e=>{
+    const a=e.target.closest('a'); if(!a)return;
+    e.preventDefault();
+    const sec=document.getElementById(a.getAttribute('href').slice(1));
+    if(sec){ sec.open=true; sec.scrollIntoView({block:'start',behavior:'smooth'}); }
+  };
+}
+function showHelp(){
+  buildHelpToc();
+  const ov=$('#help-overlay'); if(!ov)return;
+  ov.hidden=false; ov.scrollTop=0;
+  AudioFX.click();
+}
+function closeHelp(){
+  const ov=$('#help-overlay'); if(!ov)return;
+  ov.hidden=true; AudioFX.click();
+}
+
 // ==================== NEW MODE WIRING ====================
 $('#dl-grant').onclick=()=>answerDeadlock(true);
 $('#dl-deny').onclick=()=>answerDeadlock(false);
@@ -1317,7 +1577,11 @@ $('#dl-hint').onclick=()=>{
   if(!cur)return;
   const chk=bankersRequestLocal(dlState.alloc,dlGame.max,dlState.avail,cur.pid,cur.req);
   const fb=$('#dl-feedback'); fb.hidden=false; fb.className='predict-result';
-  fb.innerHTML=`💡 Hint: ${chk.grant?'GRANT':'DENY'} — ${chk.reason}. (-40 pts)`;
+  const why=chk.reason==='exceeds-need' ? `P${cur.pid} asks for more than its remaining Need.`
+    : chk.reason==='not-available' ? 'The requested amount is not all Available right now.'
+    : chk.reason==='safe' ? `The simulated state is safe; possible finish order: ${chk.seq.map(pid=>`P${pid}`).join(' → ')}.`
+    : 'Granting this would leave at least one process unable to finish (unsafe state).';
+  fb.innerHTML=`<strong>Hint: ${chk.grant?'GRANT':'DENY'} · −40 pts</strong><span>${why}</span>`;
 };
 
 $('#vm-choices').onclick=e=>{
@@ -1330,7 +1594,11 @@ $('#vm-hint').onclick=()=>{
   const step=vmState.steps[vmState.idx];
   if(!step)return;
   const fb=$('#vm-feedback'); fb.hidden=false; fb.className='predict-result';
-  fb.innerHTML=`💡 Hint: this is ${step.hit?'a HIT':`a ${step.fault} fault`}. (-40 pts)`;
+  const why=step.hit?'The page is already in a frame and this access is allowed.'
+    :step.fault==='PURE'?'The page is not in memory yet, so it must be loaded.'
+    :step.fault==='COW'?'This is a write to a shared page; the OS must copy it before writing.'
+    :'This page is outside the process’s allowed range.';
+  fb.innerHTML=`<strong>Hint: ${step.hit?'HIT':`${step.fault} FAULT`} · −40 pts</strong><span>${why}</span>`;
 };
 
 $('#fs-disk').onclick=e=>{
@@ -1339,26 +1607,62 @@ $('#fs-disk').onclick=e=>{
 };
 $('#fs-confirm').onclick=()=>confirmFs();
 $('#fs-clear').onclick=()=>{ if(!fsState)return; fsState.selected=[]; AudioFX.select(); renderFS(); };
+$('#fs-skip').onclick=()=>{
+  if(!fsGame||!fsState||fsState.locked)return;
+  const file=fsGame.files[fsState.idx]; if(!file)return;
+  AudioFX.lose(); shake('soft');
+  fsState.locked=true;
+  fsState.answers.push(null);          // skipped → graded as an incorrect placement
+  logFS(file, [], false);
+  const fb=$('#fs-feedback'); fb.hidden=false; fb.className='predict-result bad';
+  fb.innerHTML=`✗ No legal placement left for File ${file.id} — skipped.`;
+  setTimeout(()=>{
+    fsState.locked=false; fsState.selected=[]; fsState.idx++;
+    if(fsState.idx>=fsGame.files.length){ finishFS(); return; }
+    renderFS();
+  },1000);
+};
 $('#fs-hint').onclick=()=>{
   if(!fsGame||!fsState)return;
   hintsUsedThisRun++; AudioFX.select();
   const file=fsGame.files[fsState.idx];
   if(!file)return;
-  const expected=fileAllocLocal([...fsState.disk],fsGame.files,fsGame.algorithm);
-  const step=expected[fsState.idx];
-  const blocks=step && step.blocks ? step.blocks : null;
+  // First-fit over the LIVE disk, for this file alone, is always a legal
+  // placement — so the hint can never point at an already-used block.
+  const suggestion=fileAllocLocal([...fsState.disk],[file],fsGame.algorithm)[0];
+  const blocks=suggestion && suggestion.blocks ? suggestion.blocks : null;
   const fb=$('#fs-feedback'); fb.hidden=false; fb.className='predict-result';
   fb.innerHTML=blocks&&blocks.length
-    ? `💡 Hint: try blocks ${blocks.join(', ')}. (-40 pts)`
-    : '💡 Hint: not enough free space for this file. (-40 pts)';
+    ? `💡 Hint: ${fsGame.algorithm==='indexed'?`index block ${blocks[0]+1}, data blocks ${blocks.slice(1).map(b=>b+1).join(', ')}`:`try disk blocks ${blocks.map(b=>b+1).join(', ')}`}. (-40 pts)`
+    : '💡 Hint: no legal placement left for this file. (-40 pts)';
 };
+
+// ---- Sync lab + help wiring ----
+$('#sync-choices').onclick=e=>{
+  const b=e.target.closest('[data-sync]'); if(!b)return;
+  answerSync(b.dataset.sync);
+};
+$('#sync-hint').onclick=()=>{
+  if(!syncGame||!syncState)return;
+  const steps=syncSteps(); const step=steps[syncState.idx]; if(!step)return;
+  hintsUsedThisRun++; AudioFX.select();
+  syncState.score=Math.max(0,syncState.score-40);
+  $('#sync-score').textContent=syncState.score;
+  const right=((step.options.find(o=>o.key===step.answerKey)||{}).label)||step.answerKey;
+  const fb=$('#sync-feedback'); fb.hidden=false; fb.className='predict-result';
+  fb.innerHTML=`💡 Hint: ${right}. (-40 pts)`;
+};
+$('#help-btn').onclick=showHelp;
+$('#help-fab').onclick=showHelp;
+$('#help-close').onclick=closeHelp;
+$('#help-overlay').onclick=e=>{ if(e.target.id==='help-overlay') closeHelp(); };
 
 $('#home-btn').onclick=e=>{e.preventDefault();AudioFX.click();goHome();};
 $('#mode-select').onchange=e=>{
   const v=e.target.value;
   // No mode selected yet → hide all algo dropdowns
   if(!v){
-    ['algo-select-container','memory-algo-container','disk-algo-container','alloc-algo-container'].forEach(id=>$('#'+id).hidden=true);
+    ['algo-select-container','memory-algo-container','disk-algo-container','alloc-algo-container','deadlock-algo-container','vm-algo-container','fs-algo-container','sync-algo-container'].forEach(id=>$('#'+id).hidden=true);
     $('#algo-desc').textContent='Select a game mode to choose your algorithm.';
     return;
   }
@@ -1369,10 +1673,12 @@ $('#mode-select').onchange=e=>{
   $('#deadlock-algo-container').hidden = v!=='deadlock';
   $('#vm-algo-container').hidden = v!=='vm';
   $('#fs-algo-container').hidden = v!=='fs';
+  $('#sync-algo-container').hidden = v!=='sync';
   const map={scheduler:()=>algoInfo[$('#algo-select').value],memory:()=>memAlgoInfo[$('#memory-algo-select').value],disk:()=>diskAlgoInfo[$('#disk-algo-select').value],alloc:()=>allocAlgoInfo[$('#alloc-algo-select').value],
   deadlock:()=>dlAlgoInfo[$('#deadlock-algo-select').value]||dlAlgoInfo.avoidance,
   vm:()=>vmAlgoInfo[$('#vm-algo-select').value]||vmAlgoInfo.fifo,
-  fs:()=>fsAlgoInfo[$('#fs-algo-select').value]||fsAlgoInfo.contiguous};
+  fs:()=>fsAlgoInfo[$('#fs-algo-select').value]||fsAlgoInfo.contiguous,
+  sync:()=>syncAlgoInfo[$('#sync-algo-select').value]||syncAlgoInfo.critical};
   const info=map[v]();
   $('#algo-desc').textContent=`${info.name}: ${info.desc}`;
 };
@@ -1380,6 +1686,7 @@ $('#algo-select').onchange=e=>{const i=algoInfo[e.target.value];$('#algo-desc').
 $('#memory-algo-select').onchange=e=>{const i=memAlgoInfo[e.target.value];$('#algo-desc').textContent=`${i.name}: ${i.desc}`;};
 $('#disk-algo-select').onchange=e=>{const i=diskAlgoInfo[e.target.value];$('#algo-desc').textContent=`${i.name}: ${i.desc}`;};
 $('#alloc-algo-select').onchange=e=>{const i=allocAlgoInfo[e.target.value];$('#algo-desc').textContent=`${i.name}: ${i.desc}`;};
+$('#sync-algo-select').onchange=e=>{const i=syncAlgoInfo[e.target.value]||syncAlgoInfo.critical;$('#algo-desc').textContent=`${i.name}: ${i.desc}`;};
 $('#cpu').ondragover=e=>e.preventDefault();
 $('#cpu').ondrop=e=>deploy(e.dataTransfer.getData('text'));
 $('#cpu').onclick=()=>{if(selected){deploy(selected.id);}};
@@ -1498,7 +1805,10 @@ document.addEventListener('click',e=>{
 
 // Keyboard shortcuts
 document.addEventListener('keydown',e=>{
-  if(e.target.matches('input,select,textarea'))return;
+  // e.target can be the document itself (e.g. a synthetic event), which has no
+  // .matches — guard it, and handle Escape before the per-mode early returns.
+  if(e.target&&e.target.matches&&e.target.matches('input,select,textarea'))return;
+  if(e.key==='Escape'){ closeHelp(); return; }
   const k=e.key.toLowerCase();
 
   // Scheduler mode active
@@ -1558,6 +1868,13 @@ document.addEventListener('keydown',e=>{
       e.preventDefault();
     }
   }
+  // Sync lab: 1-9 pick a call, H for a hint
+  if(typeof syncGame!=='undefined'&&syncGame&&!$('#sync-game').hidden){
+    const btns=[...document.querySelectorAll('#sync-choices .pred-btn')];
+    if(/^[1-9]$/.test(k)){ const b=btns[parseInt(k)-1]; if(b)b.click(); }
+    else if(k==='h'){ $('#sync-hint').click(); }
+  }
+  // Help overlay closes with Escape (handled at the top of this listener)
 });
 
 // Welcome keyboard strip
