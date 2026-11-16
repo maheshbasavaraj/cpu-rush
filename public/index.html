@@ -100,6 +100,7 @@
   <button>START MISSION <b>→</b></button>
 </form>
 <button type="button" id="help-btn" class="help-open">📖 HOW TO PLAY — full rules for every game</button>
+<button type="button" id="about-btn" class="help-open about-open">👤 ABOUT — project &amp; author</button>
 <small class="algo-desc" id="algo-desc">Select a game mode to choose your algorithm.</small>
 <div class="kbd-hints" id="welcome-kbd"></div>
 </section>
@@ -542,6 +543,60 @@
       <p>A counting semaphore <b>S</b> with two atomic operations: <b>P(S)</b> (wait) and <b>V(S)</b> (signal). P decrements S if S &gt; 0 and continues; if S is 0 it blocks and joins the queue, leaving S at 0. V increments S — unless a process is blocked, in which case that process is woken and immediately consumes the unit, so S stays the same. For each operation predict the value of S afterwards. A binary semaphore (S limited to 0/1) behaves like a mutex.</p>
     </details>
   </div>
+</div>
+</div>
+<!-- ABOUT / PROJECT + AUTHOR -->
+<div id="about-overlay" hidden>
+<div class="help-panel about-panel">
+  <header class="help-head">
+    <h2>ABOUT</h2>
+    <button type="button" id="about-close" class="help-close">✕ CLOSE</button>
+  </header>
+  <p class="help-lede"><b>CPU RUSH</b> is a Socratic study game for <b>Operating Systems</b>. Instead of reading a worked example, you predict what the OS will do next — the server then runs the real algorithm and grades your call. It was built as a course project for the VTU <b>BCD305 Operating Systems</b> syllabus.</p>
+
+  <div class="about-profile">
+    <div class="about-avatar">MB</div>
+    <div class="about-who">
+      <h3>Mahesh Basavaraj</h3>
+      <p class="about-role">Designer &amp; developer — algorithms, game logic, and interface</p>
+      <div class="about-links">
+        <a href="https://github.com/maheshbasavaraj" target="_blank" rel="noopener">GitHub · @maheshbasavaraj ↗</a>
+        <a href="mailto:bmaheshbasavaraj@gmail.com">bmaheshbasavaraj@gmail.com</a>
+      </div>
+    </div>
+  </div>
+
+  <div class="about-grid">
+    <div class="about-card">
+      <h4>THE IDEA</h4>
+      <p>Learning an algorithm by watching it run feels like understanding it. It isn't. Every mode here hides the outcome until you commit, so the gap between your prediction and the real result is where the learning happens.</p>
+    </div>
+    <div class="about-card">
+      <h4>HOW IT GRADES</h4>
+      <p>The server generates each puzzle, keeps the answer key, and only computes the solution when you submit. The answer is never sent to the browser, so inspecting the page or editing the client cannot reveal it or inflate a score.</p>
+    </div>
+    <div class="about-card">
+      <h4>BUILT WITH</h4>
+      <p>Plain <b>Node.js</b> (built-in <code>http</code>, zero runtime dependencies), vanilla JavaScript and CSS, and the <b>Web Audio API</b> for sound — no asset files, no frameworks, no build step. Tests run on <code>node --test</code>.</p>
+    </div>
+    <div class="about-card">
+      <h4>THE MODES</h4>
+      <p><b>8</b> modes: CPU Scheduling, Page Replacement, Disk Scheduling, Memory Allocation, Deadlock Avoidance, Demand Paging, File System Allocation, and Synchronization (critical sections, Peterson's, TSL, mutexes, semaphores).</p>
+    </div>
+  </div>
+
+  <h4 class="about-h">Syllabus map</h4>
+  <table class="help-table">
+    <tr><th>Module</th><th>Topic</th><th>Mode</th></tr>
+    <tr><td>Process scheduling</td><td>FCFS, SJF, RR, Priority</td><td>CPU Scheduling</td></tr>
+    <tr><td>Memory management</td><td>Paging, page replacement</td><td>Page Replacement, Memory Allocation</td></tr>
+    <tr><td>Deadlocks</td><td>Characterization, Banker's algorithm</td><td>Deadlock Management</td></tr>
+    <tr><td>Virtual memory</td><td>Demand paging, faults, copy-on-write</td><td>Virtual Memory</td></tr>
+    <tr><td>File systems</td><td>Contiguous, linked, indexed allocation</td><td>File System</td></tr>
+    <tr><td>Process synchronization</td><td>Critical section, Peterson's, TSL, semaphores</td><td>Synchronization</td></tr>
+  </table>
+
+  <p class="about-foot">Built for Operating Systems coursework. No accounts, no tracking — your name and USN stay in this browser, and only the leaderboard entry is stored on the class server.</p>
 </div>
 </div>
 </main><script src="audio.js"></script><script src="algos.js"></script><script src="app.js"></script></body></html>

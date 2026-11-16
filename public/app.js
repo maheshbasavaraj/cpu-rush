@@ -1566,6 +1566,15 @@ function closeHelp(){
   const ov=$('#help-overlay'); if(!ov)return;
   ov.hidden=true; AudioFX.click();
 }
+function showAbout(){
+  const ov=$('#about-overlay'); if(!ov)return;
+  ov.hidden=false; ov.scrollTop=0;
+  AudioFX.click();
+}
+function closeAbout(){
+  const ov=$('#about-overlay'); if(!ov)return;
+  ov.hidden=true; AudioFX.click();
+}
 
 // ==================== NEW MODE WIRING ====================
 $('#dl-grant').onclick=()=>answerDeadlock(true);
@@ -1655,6 +1664,9 @@ $('#sync-hint').onclick=()=>{
 $('#help-btn').onclick=showHelp;
 $('#help-fab').onclick=showHelp;
 $('#help-close').onclick=closeHelp;
+if($('#about-btn')) $('#about-btn').onclick=showAbout;
+if($('#about-close')) $('#about-close').onclick=closeAbout;
+if($('#about-overlay')) $('#about-overlay').onclick=e=>{ if(e.target.id==='about-overlay') closeAbout(); };
 $('#help-overlay').onclick=e=>{ if(e.target.id==='help-overlay') closeHelp(); };
 
 $('#home-btn').onclick=e=>{e.preventDefault();AudioFX.click();goHome();};
@@ -1808,7 +1820,7 @@ document.addEventListener('keydown',e=>{
   // e.target can be the document itself (e.g. a synthetic event), which has no
   // .matches — guard it, and handle Escape before the per-mode early returns.
   if(e.target&&e.target.matches&&e.target.matches('input,select,textarea'))return;
-  if(e.key==='Escape'){ closeHelp(); return; }
+  if(e.key==='Escape'){ closeHelp(); closeAbout(); return; }
   const k=e.key.toLowerCase();
 
   // Scheduler mode active
