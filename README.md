@@ -28,7 +28,7 @@ PORT=8080 npm start   # override the default port 3000
 
 ## Game Modes
 
-Seven modes, each driven by a real algorithm in [`public/algos.js`](public/algos.js):
+Nine modes, each driven by a real algorithm in [`public/algos.js`](public/algos.js):
 
 | # | Mode | Algorithms | What you learn |
 |---|------|-----------|----------------|
@@ -39,6 +39,8 @@ Seven modes, each driven by a real algorithm in [`public/algos.js`](public/algos
 | 5 | **Deadlock Management** | Deadlock Avoidance (Banker's) | Safe/unsafe states, grant or deny each request |
 | 6 | **Virtual Memory** | Demand Paging (FIFO) | `HIT` vs `FAULT · PURE` (read of an absent page) / `FAULT · COW` (write to a shared page) / `FAULT · PROT` (page beyond `maxPage`) |
 | 7 | **File System** | Contiguous · Linked · Indexed | Block placement, fragmentation, indirection |
+| 8 | **Synchronization** | Critical Section · Peterson's · TSL · Semaphores | Entry/exit conditions, busy-waiting, blocking |
+| 9 | **Lockdown** | Mutex · Binary Semaphore · Counting Semaphore | Ownership vs signalling, permits, queued waiters |
 
 Each mode scales with **level** — difficulty genuinely increases (e.g. page-replacement and paging puzzles add more frames at higher levels), and the student chooses the algorithm before the round starts.
 

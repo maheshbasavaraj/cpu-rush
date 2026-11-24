@@ -64,6 +64,126 @@ function allocateHoles(holesIn, reqSizes, strategy) {
   return { steps, finalHoles: holes.map(h=>({...h})) };
 }
 
+// ==================== LOCKDOWN: MUTEX / BINARY / COUNTING ====================
+// A fixed request script (enter / leave) for a set of threads. Every request is
+// one decision: what should the controller call right now? One of four calls is
+// right, and the canonical call is replayed so the run always advances (same
+// contract as the other labs: your answer is graded, the machine plays the
+// correct line).
+function lockdownSim(kind, puzzle) {
+  const kinds = ['mutex', 'binary', 'counting'];
+  const k = kinds.indexOf(kind) >= 0 ? kind : 'mutex';
+  const pz = puzzle || {};
+  const units = Math.max(1, Number(pz.units) || (k === 'counting' ? 3 : 1));
+  const script = Array.isArray(pz.script) ? pz.script : [];
+  const api = k === 'mutex'
+    ? { acquire: 'lock(m)', release: 'unlock(m)' }
+    : { acquire: 'P(S)  (wait)', release: 'V(S)  (signal)' };
+  const zone = k === 'mutex' ? 'the critical section' : k === 'binary' ? 'the single resource' : 'the resource pool';
+
+  let value = units;
+  const held = Object.create(null);
+  let queue = [];
+  let errors = 0;
+  const trace = [];
+  const steps = [];
+
+  // Same four candidates every step, shuffled deterministically so the right
+  // one is not always in the same place (position-guessing teaches nothing).
+  const order = (i) => {
+    const out = ['acquire', 'block', 'release', 'reject'];
+    let seed = ((i + 1) * 2654435761) % 2147483647;
+    for (let j = out.length - 1; j > 0; j--) {
+      seed = (seed * 1103515245 + 12345) % 2147483648;
+      const r = seed % (j + 1);
+      const swap = out[j]; out[j] = out[r]; out[r] = swap;
+    }
+    return out;
+  };
+
+  script.forEach((ev, i) => {
+    const t = String(ev.t);
+    const op = ev.op === 'leave' ? 'leave' : 'enter';
+    const holders = Object.keys(held);
+    const before = value;
+    const stateLine = k === 'mutex'
+      ? 'Mutex: ' + (holders[0] ? 'held by ' + holders[0] : 'free')
+      : 'Free permits: ' + value + '/' + units;
+    const queueLine = 'Queue: ' + (queue.length ? queue.join(' → ') : 'empty');
+
+    let answerKey, explain;
+    if (op === 'enter') {
+      if (held[t] > 0 && k === 'mutex') {
+        answerKey = 'reject';
+        explain = t + ' already owns the mutex. A plain mutex is not recursive, so a second lock() by the owner is an error — if it were granted the thread would wait for itself forever.';
+      } else if (value > 0) {
+        answerKey = 'acquire';
+        explain = 'A unit is free, so ' + api.acquire + ' succeeds: ' + t + ' enters ' + zone + ' and the free count goes ' + before + ' → ' + (before - 1) + '.';
+      } else {
+        answerKey = 'block';
+        explain = 'No unit is free. Granting ' + t + ' entry now would take the count below zero — the very bug the primitive exists to prevent. ' + t + ' joins the queue and waits.';
+      }
+    } else if (held[t] > 0) {
+      answerKey = 'release';
+      if (queue.length) {
+        explain = k === 'mutex'
+          ? t + ' owns the mutex and releases it; ownership passes straight to ' + queue[0] + ', the head of the queue, so no second thread can slip in first.'
+          : t + ' returns its permit and ' + queue[0] + ' is woken and takes that unit immediately, so the free count does not actually grow.';
+      } else {
+        explain = k === 'mutex'
+          ? t + ' owns the mutex, so unlock() is legal: the mutex becomes free again.'
+          : t + ' holds a unit, so ' + api.release + ' is legal: the free count rises ' + before + ' → ' + (before + 1) + '.';
+      }
+    } else {
+      answerKey = 'reject';
+      explain = k === 'mutex'
+        ? t + ' does not own the mutex, so unlock() must be refused. Ownership is exactly what separates a mutex from a binary semaphore.'
+        : t + ' never called ' + api.acquire + ', so ' + api.release + ' here invents a permit. Every wait must be matched by exactly one signal from the same thread.';
+    }
+
+    const view = {
+      kind: k, units, value,
+      holders: holders.map((n) => ({ t: n, n: held[n] })),
+      queue: queue.slice(),
+      owner: k === 'mutex' ? (holders[0] || null) : null
+    };
+    const labels = {
+      acquire: { label: api.acquire, desc: k === 'mutex' ? 'take the mutex if nobody owns it' : 'take a permit if one is free' },
+      block: { label: 'block ' + t, desc: 'park ' + t + ' on the queue until a unit frees up' },
+      release: { label: api.release, desc: k === 'mutex' ? 'give the mutex back' : 'return a permit and wake a waiter' },
+      reject: { label: 'refuse the call', desc: 'the call is illegal — raise an error instead' }
+    };
+    const options = order(i).map((key) => ({ key, label: labels[key].label, desc: labels[key].desc }));
+    const prompt = (op === 'enter'
+      ? t + ' requests ' + zone + '. '
+      : t + ' reports it is leaving ' + zone + '. ') + stateLine + '. ' + queueLine + '. What should the controller do?';
+
+    steps.push({ index: steps.length, prompt, options, answerKey, explain, view, trace: trace.slice() });
+
+    // replay the canonical call so the next request sees the real state
+    if (answerKey === 'acquire') {
+      value--;
+      held[t] = (held[t] || 0) + 1;
+      trace.push(t + ': ' + api.acquire + ' → admitted (free ' + (value + 1) + ' → ' + value + ')');
+    } else if (answerKey === 'block') {
+      queue.push(t);
+      trace.push(t + ': ' + api.acquire + ' → queued (free ' + value + ')');
+    } else if (answerKey === 'release') {
+      held[t]--;
+      if (held[t] <= 0) delete held[t];
+      value++;
+      let nxt = null;
+      if (queue.length) { nxt = queue.shift(); value--; held[nxt] = (held[nxt] || 0) + 1; }
+      trace.push(t + ': ' + api.release + ' → ' + (nxt ? 'handed straight to ' + nxt : 'free again') + ' (free ' + value + ')');
+    } else {
+      errors++;
+      trace.push(t + ': ' + (op === 'enter' ? api.acquire : api.release) + ' → REFUSED (illegal, ' + errors + ' so far)');
+    }
+  });
+
+  return { steps };
+}
+
 // Export to window for non-module scripts
 if (typeof window !== 'undefined') {
   window.DiskAlgos = { diskFCFS, diskSSTF, diskSCAN, diskSchedule, totalSeek };
@@ -72,10 +192,11 @@ if (typeof window !== 'undefined') {
   window.VmAlgos = { demandPagingSim };
   window.FsAlgos = { fileAllocSim, fsPlacementOk };
   window.SyncAlgos = { syncSim };
+  window.LockdownAlgos = { lockdownSim };
 }
 if (typeof module !== 'undefined' && module.exports) {
   module.exports = { diskFCFS, diskSSTF, diskSCAN, diskSchedule, totalSeek, allocateHoles,
-    bankersSafe, bankersRequest, demandPagingSim, fileAllocSim, fsPlacementOk, syncSim };
+    bankersSafe, bankersRequest, demandPagingSim, fileAllocSim, fsPlacementOk, syncSim, lockdownSim };
 }
 
 // ==================== DEADLOCK AVOIDANCE (BANKER'S) ====================

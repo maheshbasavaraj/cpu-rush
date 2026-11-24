@@ -11,12 +11,13 @@ function goHome(){
   [typeof interval!=='undefined'&&interval, typeof memInterval!=='undefined'&&memInterval,
    typeof diskInterval!=='undefined'&&diskInterval, typeof allocInterval!=='undefined'&&allocInterval,
    typeof dlInterval!=='undefined'&&dlInterval, typeof vmInterval!=='undefined'&&vmInterval,
-   typeof fsInterval!=='undefined'&&fsInterval, typeof syncInterval!=='undefined'&&syncInterval].forEach(t=>clearInterval(t));
-  ['game','memory-game','disk-game','alloc-game','deadlock-game','vm-game','fs-game','sync-game','result'].forEach(id=>{const el=document.getElementById(id); if(el)el.hidden=true;});
+   typeof fsInterval!=='undefined'&&fsInterval, typeof syncInterval!=='undefined'&&syncInterval,
+   typeof ldInterval!=='undefined'&&ldInterval].forEach(t=>clearInterval(t));
+  ['game','memory-game','disk-game','alloc-game','deadlock-game','vm-game','fs-game','sync-game','lockdown-game','result'].forEach(id=>{const el=document.getElementById(id); if(el)el.hidden=true;});
   $('#welcome').hidden=false;
   // don't clear name/USN — player stays logged in; only mode resets to placeholder
   const ms=$('#mode-select'); if(ms)ms.value='';
-  ['algo-select-container','memory-algo-container','disk-algo-container','alloc-algo-container','deadlock-algo-container','vm-algo-container','fs-algo-container','sync-algo-container'].forEach(id=>{const el=document.getElementById(id); if(el)el.hidden=true;});
+  ['algo-select-container','memory-algo-container','disk-algo-container','alloc-algo-container','deadlock-algo-container','vm-algo-container','fs-algo-container','sync-algo-container','lockdown-algo-container'].forEach(id=>{const el=document.getElementById(id); if(el)el.hidden=true;});
   const d=$('#algo-desc'); if(d)d.textContent='Select a game mode to choose your algorithm.';
   refreshXpUI(); leaderboard(); syncLeaderboardVisibility();
 }
@@ -182,6 +183,7 @@ async function start(player){
   if(mode==='vm'){ startVM(player); return; }
   if(mode==='fs'){ startFS(player); return; }
   if(mode==='sync'){ startSync(player); return; }
+  if(mode==='lockdown'){ startLockdown(player); return; }
 
   const res=await fetch('/api/session',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({player:playerInfo,algorithm,level:1})});
   game=await res.json();
@@ -1539,6 +1541,152 @@ async function finishSync(){
   if(again) again.onclick=()=>{ AudioFX.click(); goHome(); };
 }
 
+// ==================== LOCKDOWN: MUTEX & SEMAPHORE CONTROL ROOM ====================
+let ldGame, ldState, ldInterval;
+const ldAlgoInfo = {
+  mutex:    { name:'Mutex Locks', short:'MUTEX LOCK', desc:'Ownership matters: only the owner may unlock, and a second lock() by the owner is refused.' },
+  binary:   { name:'Binary Semaphore', short:'BINARY SEMAPHORE', desc:'One permit, no owner: any thread may signal, but a signal cannot invent a permit.' },
+  counting: { name:'Counting Semaphore', short:'COUNTING SEMAPHORE', desc:'N permits shared by four threads: admit while permits last, queue the rest FIFO.' }
+};
+
+function ldKind(){ return (ldGame && ldGame.puzzle && ldGame.puzzle.kind) || ldGame && ldGame.algorithm || 'mutex'; }
+
+// Same contract as the sync lab: algos.js computes the canonical line, so the
+// browser and the server grade against exactly the same right answers.
+function ldSteps(){
+  if(!ldGame) return [];
+  return lockdownSim(ldKind(), ldGame.puzzle).steps;
+}
+
+async function startLockdown(player){
+  const {mode,...playerInfo}=player;
+  const algorithm=$('#lockdown-algo-select').value;
+  try{
+    const res=await fetch('/api/session',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({player:playerInfo,algorithm,level:1,mode})});
+    const g=await res.json();
+    ldGame=g;
+    ldState={ idx:0, score:0, streak:0, bestStreak:0, answers:[], started:Date.now(), locked:false };
+    const info=ldAlgoInfo[g.algorithm]||ldAlgoInfo.mutex;
+    $('#lockdown-mission-label').textContent=`LOCKDOWN · ${info.short}`;
+    $('#lockdown-notice').textContent=info.desc;
+    $('#welcome').hidden=true; syncLeaderboardVisibility();
+    $('#lockdown-game').hidden=false;
+    clearFeedback('lockdown-feedback');
+    $('#lockdown-log').innerHTML='';
+    renderLockdown();
+    clearInterval(ldInterval);
+    ldInterval=setInterval(()=>$('#lockdown-timer').textContent=fmt((Date.now()-ldState.started)/1000),1000);
+  }catch(e){ console.error(e); alert('Could not start the lockdown mission.'); }
+}
+
+// The machine, drawn: free permits as slots, who is inside, who is queued.
+function ldViz(step){
+  const v=step.view||{}, kind=v.kind||'mutex', units=v.units||1;
+  const free=v.value||0;
+  const slots=Array.from({length:units},(_,i)=>`<span class="ld-unit${i<free?' free':''}"></span>`).join('');
+  const inside=(v.holders||[]).map(h=>
+    `<span class="proc in">${h.t}${h.n>1?' ×'+h.n:''}</span>`).join('');
+  const queue=(v.queue||[]).map(t=>`<span class="proc alt">${t}</span>`).join('');
+  const badge=kind==='mutex'
+    ? `<div class="lock-badge${v.owner?' shut':''}"><b>${v.owner?'LOCKED':'FREE'}</b><span>${v.owner?'owned by '+v.owner:'nobody owns it'}</span></div>`
+    : `<div class="sem-count"><b>${free}</b><span>permits free of ${units}</span></div>`;
+  return `<div class="viz viz-ld">
+    <div class="ld-row"><span class="viz-lbl">PERMITS</span><div class="ld-units">${slots}</div></div>
+    ${badge}
+    <div class="ld-row"><span class="viz-lbl">INSIDE</span><div class="viz-slots">${inside||'<span class="viz-none">empty</span>'}</div></div>
+    <div class="ld-row"><span class="viz-lbl">QUEUE</span><div class="viz-slots">${queue||'<span class="viz-none">empty</span>'}</div></div>
+  </div>`;
+}
+
+function renderLockdown(){
+  const g=ldGame, st=ldState;
+  if(!g||!st)return;
+  const steps=ldSteps(); const step=steps[st.idx];
+  if(!step){ finishLockdown(); return; }
+  const v=step.view||{};
+  $('#lockdown-state').innerHTML=[
+    ['Available', `${v.value} / ${v.units}`],
+    [v.kind==='mutex'?'Owner':'Holders', (v.holders||[]).map(h=>h.t+(h.n>1?'×'+h.n:'')).join(', ')||'none'],
+    ['Queue', (v.queue||[]).join(' → ')||'empty']
+  ].map(([k,val])=>`<div class="st"><span>${k}</span><b>${val}</b></div>`).join('');
+  $('#lockdown-viz').innerHTML=ldViz(step);
+  const tr=step.trace||[];
+  $('#lockdown-trace').innerHTML=tr.length
+    ? tr.map((t,i)=>`<span class="${i===tr.length-1?'now':''}">${t}</span>`).join('')
+    : '<span>No calls yet — this is the first request of the shift.</span>';
+  $('#lockdown-question').innerHTML=step.prompt;
+  $('#lockdown-choices').innerHTML=step.options.map(o=>
+    `<button class="pred-btn" data-ld="${o.key}"><span class="btn-label">${o.label}</span>${o.desc?`<span class="btn-desc">${o.desc}</span>`:''}</button>`).join('');
+  $('#lockdown-score').textContent=st.score;
+  $('#lockdown-progress').textContent=`${st.idx+1}/${steps.length}`;
+}
+
+function answerLockdown(key){
+  const g=ldGame, st=ldState;
+  if(!g||!st||st.locked)return;
+  const steps=ldSteps(); const step=steps[st.idx];
+  if(!step)return;
+  const correct=key===step.answerKey;
+  const chosen=((step.options.find(o=>o.key===key)||{}).label)||key;
+  st.locked=true;
+  st.answers.push(key);
+  if(correct){ st.score+=70; st.streak++; st.bestStreak=Math.max(st.bestStreak,st.streak); AudioFX.win(); }
+  else { st.streak=0; AudioFX.lose(); shake('soft'); }
+
+  const fb=$('#lockdown-feedback');
+  fb.hidden=false; fb.className='predict-result '+(correct?'good':'bad');
+  fb.innerHTML=correct
+    ? `<strong>✓ Correct</strong><span>${step.explain}</span>`
+    : `<strong>✗ Wrong call — you chose ${chosen}.</strong><span>${step.explain}</span>`;
+
+  logLockdown(st.idx, chosen, correct, step);
+  setTimeout(()=>{
+    st.locked=false; st.idx++;
+    if(st.idx>=steps.length){ finishLockdown(); return; }
+    renderLockdown();
+  },1100);
+}
+
+function logLockdown(index, chosen, correct, step){
+  const log=$('#lockdown-log'); if(!log)return;
+  const el=document.createElement('div');
+  el.className='log-entry '+(correct?'good':'bad');
+  el.innerHTML=`<span class="step">CALL ${index+1}</span>
+    <span class="${correct?'good':'bad'}">${correct?'✓':'✗'} ${chosen} — ${step.explain}</span>`;
+  log.appendChild(el); log.scrollTop=log.scrollHeight;
+}
+
+async function finishLockdown(){
+  clearInterval(ldInterval);
+  if(!ldGame||!ldState)return;
+  $('#lockdown-game').hidden=true;
+  const elapsed=Math.round((Date.now()-ldState.started)/1000);
+  let r;
+  try{
+    const res=await fetch('/api/submit',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({sessionId:ldGame.id,actions:ldState.answers,elapsed})});
+    r=await res.json();
+  }catch(e){ console.error(e); alert('Could not submit the lockdown run.'); return; }
+  const perfect=r.correct===r.total;
+  addXP(r.score); refreshXpUI();
+  if(typeof recordMission==='function') recordMission({mode:'lockdown',algo:ldKind(),perfect,bestStreak:ldState.bestStreak,elapsed,hintsUsed:hintsUsedThisRun});
+  if(typeof checkAchievements==='function') checkAchievements({completedDelta:1,perfect,bestStreak:ldState.bestStreak,elapsed,hintsUsed:hintsUsedThisRun,modesWon:{scheduler:false,memory:false},algoWins:[ldKind()]});
+  if(perfect){AudioFX.win();confetti(60);}else{AudioFX.win();}
+  $('#result').hidden=false; syncLeaderboardVisibility();
+  $('#result').innerHTML=`
+    <h2>${perfect?'🔐 EXCLUSION ENGINEER':r.correct>=r.total/2?'MUTUAL EXCLUSION HELD':'DATA RACE'}</h2>
+    <p><b>${(ldAlgoInfo[ldKind()]||ldAlgoInfo.mutex).short}</b> · ${r.correct}/${r.total} calls right</p>
+    <div class="result-stats">
+      <div class="rs"><b>${r.correct}/${r.total}</b><span>CORRECT</span></div>
+      <div class="rs"><b>×${ldState.bestStreak}</b><span>BEST STREAK</span></div>
+      <div class="rs"><b>+${r.score}</b><span>XP EARNED</span></div>
+    </div>
+    <button id="lockdown-again">BACK TO MISSIONS</button>`;
+  const again=$('#lockdown-again');
+  if(again) again.onclick=()=>{ AudioFX.click(); goHome(); };
+}
+
 // ==================== HELP PAGE ====================
 function buildHelpToc(){
   const toc=$('#help-toc'); if(!toc||toc.dataset.built)return;
@@ -1661,6 +1809,20 @@ $('#sync-hint').onclick=()=>{
   const fb=$('#sync-feedback'); fb.hidden=false; fb.className='predict-result';
   fb.innerHTML=`💡 Hint: ${right}. (-40 pts)`;
 };
+$('#lockdown-choices').onclick=e=>{
+  const b=e.target.closest('[data-ld]'); if(!b)return;
+  answerLockdown(b.dataset.ld);
+};
+$('#lockdown-hint').onclick=()=>{
+  if(!ldGame||!ldState)return;
+  const steps=ldSteps(); const step=steps[ldState.idx]; if(!step)return;
+  hintsUsedThisRun++; AudioFX.select();
+  ldState.score=Math.max(0,ldState.score-40);
+  $('#lockdown-score').textContent=ldState.score;
+  const right=((step.options.find(o=>o.key===step.answerKey)||{}).label)||step.answerKey;
+  const fb=$('#lockdown-feedback'); fb.hidden=false; fb.className='predict-result';
+  fb.innerHTML=`💡 Hint: ${right}. (-40 pts)`;
+};
 $('#help-btn').onclick=showHelp;
 $('#help-fab').onclick=showHelp;
 $('#help-close').onclick=closeHelp;
@@ -1674,7 +1836,7 @@ $('#mode-select').onchange=e=>{
   const v=e.target.value;
   // No mode selected yet → hide all algo dropdowns
   if(!v){
-    ['algo-select-container','memory-algo-container','disk-algo-container','alloc-algo-container','deadlock-algo-container','vm-algo-container','fs-algo-container','sync-algo-container'].forEach(id=>$('#'+id).hidden=true);
+    ['algo-select-container','memory-algo-container','disk-algo-container','alloc-algo-container','deadlock-algo-container','vm-algo-container','fs-algo-container','sync-algo-container','lockdown-algo-container'].forEach(id=>$('#'+id).hidden=true);
     $('#algo-desc').textContent='Select a game mode to choose your algorithm.';
     return;
   }
@@ -1686,11 +1848,13 @@ $('#mode-select').onchange=e=>{
   $('#vm-algo-container').hidden = v!=='vm';
   $('#fs-algo-container').hidden = v!=='fs';
   $('#sync-algo-container').hidden = v!=='sync';
+  $('#lockdown-algo-container').hidden = v!=='lockdown';
   const map={scheduler:()=>algoInfo[$('#algo-select').value],memory:()=>memAlgoInfo[$('#memory-algo-select').value],disk:()=>diskAlgoInfo[$('#disk-algo-select').value],alloc:()=>allocAlgoInfo[$('#alloc-algo-select').value],
   deadlock:()=>dlAlgoInfo[$('#deadlock-algo-select').value]||dlAlgoInfo.avoidance,
   vm:()=>vmAlgoInfo[$('#vm-algo-select').value]||vmAlgoInfo.fifo,
   fs:()=>fsAlgoInfo[$('#fs-algo-select').value]||fsAlgoInfo.contiguous,
-  sync:()=>syncAlgoInfo[$('#sync-algo-select').value]||syncAlgoInfo.critical};
+  sync:()=>syncAlgoInfo[$('#sync-algo-select').value]||syncAlgoInfo.critical,
+  lockdown:()=>ldAlgoInfo[$('#lockdown-algo-select').value]||ldAlgoInfo.mutex};
   const info=map[v]();
   $('#algo-desc').textContent=`${info.name}: ${info.desc}`;
 };
@@ -1699,6 +1863,7 @@ $('#memory-algo-select').onchange=e=>{const i=memAlgoInfo[e.target.value];$('#al
 $('#disk-algo-select').onchange=e=>{const i=diskAlgoInfo[e.target.value];$('#algo-desc').textContent=`${i.name}: ${i.desc}`;};
 $('#alloc-algo-select').onchange=e=>{const i=allocAlgoInfo[e.target.value];$('#algo-desc').textContent=`${i.name}: ${i.desc}`;};
 $('#sync-algo-select').onchange=e=>{const i=syncAlgoInfo[e.target.value]||syncAlgoInfo.critical;$('#algo-desc').textContent=`${i.name}: ${i.desc}`;};
+$('#lockdown-algo-select').onchange=e=>{const i=ldAlgoInfo[e.target.value]||ldAlgoInfo.mutex;$('#algo-desc').textContent=`${i.name}: ${i.desc}`;};
 $('#cpu').ondragover=e=>e.preventDefault();
 $('#cpu').ondrop=e=>deploy(e.dataTransfer.getData('text'));
 $('#cpu').onclick=()=>{if(selected){deploy(selected.id);}};
@@ -1885,6 +2050,12 @@ document.addEventListener('keydown',e=>{
     const btns=[...document.querySelectorAll('#sync-choices .pred-btn')];
     if(/^[1-9]$/.test(k)){ const b=btns[parseInt(k)-1]; if(b)b.click(); }
     else if(k==='h'){ $('#sync-hint').click(); }
+  }
+  // Lockdown: same keys, same rules
+  if(typeof ldGame!=='undefined'&&ldGame&&!$('#lockdown-game').hidden){
+    const btns=[...document.querySelectorAll('#lockdown-choices .pred-btn')];
+    if(/^[1-9]$/.test(k)){ const b=btns[parseInt(k)-1]; if(b)b.click(); }
+    else if(k==='h'){ $('#lockdown-hint').click(); }
   }
   // Help overlay closes with Escape (handled at the top of this listener)
 });

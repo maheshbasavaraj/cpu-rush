@@ -2,7 +2,7 @@ const http = require('node:http');
 const fs = require('node:fs');
 const path = require('node:path');
 const { randomUUID } = require('node:crypto');
-const { bankersRequest, demandPagingSim, fileAllocSim, fsPlacementOk, syncSim } = require('./public/algos.js');
+const { bankersRequest, demandPagingSim, fileAllocSim, fsPlacementOk, syncSim, lockdownSim } = require('./public/algos.js');
 
 const port = process.env.PORT || 3000;
 const publicDir = path.join(__dirname, 'public');
@@ -523,6 +523,75 @@ function generateSyncPuzzle(algorithm) {
   return { algo, puzzle: fallback[algo] };
 }
 
+// LOCKDOWN puzzle: a fixed script of enter/leave requests for four threads.
+// The puzzle is not free-form — the controller's right call depends only on the
+// state, so the run is graded by replaying the same canonical line in
+// lockdownSim(). Requests are generated against the real state (mostly legal
+// ones, plus a few illegal calls on purpose) so a run mixes acquire, block,
+// release and reject instead of being a wall of refused calls.
+function generateLockdownPuzzle(kind) {
+  const known = ['mutex', 'binary', 'counting'];
+  const k = known.indexOf(kind) >= 0 ? kind : 'mutex';
+  const units = k === 'counting' ? 2 + Math.floor(Math.random() * 2) : 1;
+  const threads = ['T1', 'T2', 'T3', 'T4'];
+  for (let attempt = 0; attempt < 400; attempt++) {
+    const script = [];
+    const held = new Map();
+    const queue = [];
+    let value = units;
+    const n = 10;
+    for (let i = 0; i < n; i++) {
+      const holders = [...held.keys()];
+      const idle = threads.filter((x) => !held.has(x));
+      const roll = Math.random();
+      let t, op;
+      if (roll < 0.14 && idle.length) {
+        t = idle[Math.floor(Math.random() * idle.length)];
+        op = 'leave';                                   // illegal: leave without holding
+      } else if (roll < 0.22 && k === 'mutex' && holders.length) {
+        t = holders[0];
+        op = 'enter';                                   // illegal: non-recursive re-lock
+      } else if (holders.length && roll < 0.62) {
+        t = holders[Math.floor(Math.random() * holders.length)];
+        op = 'leave';                                   // legal release
+      } else {
+        t = threads[Math.floor(Math.random() * threads.length)];
+        op = 'enter';                                   // arrival
+      }
+      script.push({ t, op });
+      // advance the canonical line so the next request is generated against real state
+      if (op === 'enter') {
+        if (held.has(t) && k === 'mutex') { /* refused, state unchanged */ }
+        else if (value > 0) { value--; held.set(t, (held.get(t) || 0) + 1); }
+        else queue.push(t);
+      } else if (held.has(t)) {
+        const left = held.get(t) - 1;
+        if (left > 0) held.set(t, left); else held.delete(t);
+        value++;
+        if (queue.length) {
+          const woken = queue.shift();
+          value--;
+          held.set(woken, (held.get(woken) || 0) + 1);
+        }
+      }
+    }
+    const keys = new Set(lockdownSim(k, { kind: k, units, threads, script }).steps.map((s) => s.answerKey));
+    const legal = lockdownSim(k, { kind: k, units, threads, script }).steps.filter((s) => s.answerKey === 'acquire' || s.answerKey === 'release').length;
+    if (keys.size >= 3 && legal >= 3) return { kind: k, units, threads, script };
+  }
+  // Deterministic fallbacks: each one exercises acquire, block, release and reject.
+  const fallback = {
+    mutex: [{ t: 'T1', op: 'enter' }, { t: 'T1', op: 'enter' }, { t: 'T2', op: 'enter' }, { t: 'T1', op: 'leave' },
+      { t: 'T2', op: 'enter' }, { t: 'T3', op: 'leave' }, { t: 'T2', op: 'leave' }, { t: 'T4', op: 'enter' }],
+    binary: [{ t: 'T1', op: 'enter' }, { t: 'T2', op: 'enter' }, { t: 'T1', op: 'leave' }, { t: 'T3', op: 'leave' },
+      { t: 'T2', op: 'enter' }, { t: 'T2', op: 'leave' }, { t: 'T4', op: 'enter' }, { t: 'T4', op: 'leave' }],
+    counting: [{ t: 'T1', op: 'enter' }, { t: 'T2', op: 'enter' }, { t: 'T3', op: 'enter' }, { t: 'T4', op: 'leave' },
+      { t: 'T1', op: 'leave' }, { t: 'T4', op: 'enter' }, { t: 'T2', op: 'leave' }, { t: 'T3', op: 'leave' },
+      { t: 'T4', op: 'leave' }]
+  };
+  return { kind: k, units, threads, script: fallback[k] };
+}
+
 // no-store: the browser must never cache app.js/style.css, otherwise a fix can
 // appear "not to work" because an old copy is still being served locally.
 function send(res, status, body, type = 'application/json') { res.writeHead(status, { 'Content-Type': type, 'Cache-Control': 'no-store, must-revalidate' }); res.end(type === 'application/json' ? JSON.stringify(body) : body); }
@@ -564,6 +633,11 @@ const server = http.createServer(async (req, res) => {
       const { algo, puzzle } = generateSyncPuzzle(algorithm);
       sessions.set(id, { player, puzzle, algorithm: algo, level, mode, createdAt: Date.now() });
       return send(res, 201, { id, puzzle, algorithm: algo, level, mode });
+    }
+    if (mode === 'lockdown') {
+      const puzzle = generateLockdownPuzzle(algorithm);
+      sessions.set(id, { player, puzzle, algorithm: puzzle.kind, level, mode, createdAt: Date.now() });
+      return send(res, 201, { id, puzzle, algorithm: puzzle.kind, level, mode });
     }
     if (mode === 'alloc') {
       const { holes, reqSizes } = generateAllocPuzzle();
@@ -666,6 +740,17 @@ const server = http.createServer(async (req, res) => {
       const perfect = correct === total;
       baseScore = Math.max(0, correct * 70 + (perfect ? 400 : 0) + Math.max(0, 200 - Math.floor(elapsed / 2)) - (total - correct) * 35);
       extra = { expected: steps.map(s => s.answerKey) };
+    } else if (session.mode === 'lockdown') {
+      // actions = the call the player picked for each request, in order
+      const { steps } = lockdownSim(session.puzzle.kind, session.puzzle);
+      total = steps.length;
+      actions.forEach((key, index) => {
+        const st = steps[index];
+        if (st && key === st.answerKey) correct++;
+      });
+      const perfect = correct === total;
+      baseScore = Math.max(0, correct * 70 + (perfect ? 400 : 0) + Math.max(0, 200 - Math.floor(elapsed / 2)) - (total - correct) * 35);
+      extra = { expected: steps.map(s => s.answerKey) };
     } else if (session.mode === 'alloc') {
       const { steps } = allocateHoles(session.holes, session.reqSizes, session.algorithm);
       total = steps.length;
@@ -700,4 +785,4 @@ const server = http.createServer(async (req, res) => {
 });
 
 if (require.main === module) server.listen(port, () => console.log(`CPU RUSH running on http://localhost:${port}`));
-module.exports = { expectedOrder, pageReplacement, generateReferenceString, diskSchedule, totalSeek, allocateHoles };
+module.exports = { expectedOrder, pageReplacement, generateReferenceString, diskSchedule, totalSeek, allocateHoles, lockdownSim, generateLockdownPuzzle };

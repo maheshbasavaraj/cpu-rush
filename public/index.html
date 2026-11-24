@@ -22,6 +22,7 @@
         <option value="vm">Virtual Memory / Demand Paging</option>
         <option value="fs">File System Allocation</option>
         <option value="sync">Synchronization (Critical Section → Semaphores)</option>
+        <option value="lockdown">Lockdown (Mutex &amp; Semaphores, hands-on)</option>
       </select>
     </label>
   </div>
@@ -94,6 +95,15 @@
         <option value="hardware">Hardware Support for Synchronization (TSL / Swap)</option>
         <option value="mutex">Mutex Locks</option>
         <option value="semaphore">Semaphores</option>
+      </select>
+    </label>
+  </div>
+  <div class="mission-select" id="lockdown-algo-container" hidden>
+    <label>Primitive
+      <select name="lockdown-algo" id="lockdown-algo-select">
+        <option value="mutex">Mutex Lock — one owner, non-recursive</option>
+        <option value="binary">Binary Semaphore — S is 0 or 1, no owner</option>
+        <option value="counting">Counting Semaphore — N permits, shared pool</option>
       </select>
     </label>
   </div>
@@ -430,6 +440,40 @@
 </section>
 </section>
 
+<!-- LOCKDOWN: MUTEX & SEMAPHORE CONTROL ROOM -->
+<section id="lockdown-game" hidden>
+<header>
+  <div class="brand">CPU <i>RUSH</i><small id="lockdown-mission-label">LOCKDOWN · MUTEX LOCK</small></div>
+  <div class="stat">SCORE <strong id="lockdown-score">0</strong></div>
+  <div class="stat">STEP <strong id="lockdown-progress">0/0</strong></div>
+  <div class="stat">TIME <strong id="lockdown-timer">00:00</strong></div>
+  <button class="mute-btn" data-mute title="Sound on/off">🔊</button>
+</header>
+<div class="notice" id="lockdown-notice">Read the resource state, then make the next call.</div>
+
+<div class="grid compact">
+  <section class="panel queue">
+    <div class="section-title">RESOURCE STATE <small>the primitive right now</small></div>
+    <div id="lockdown-viz" class="sync-viz"></div>
+    <div id="lockdown-state" class="sync-state"></div>
+    <div class="section-title" style="margin:18px 0 12px">CALL TRACE <small>what the controller has done</small></div>
+    <div id="lockdown-trace" class="sync-trace"></div>
+  </section>
+  <aside class="panel status">
+    <div class="section-title">YOUR CALL <small>for this request</small></div>
+    <div id="lockdown-question" class="sync-question"></div>
+    <div class="sync-choices" id="lockdown-choices"></div>
+    <button class="hint" id="lockdown-hint">💡 HINT <small>−40 pts</small></button>
+    <div id="lockdown-feedback" class="predict-result" hidden></div>
+  </aside>
+</div>
+<section class="panel timeline compact">
+  <div class="section-title">CALL LOG</div>
+  <p class="sync-log-help">Every call you made, and the rule it breaks or obeys.</p>
+  <div id="lockdown-log"></div>
+</section>
+</section>
+
 <!-- HELP / RULES -->
 <button type="button" id="help-fab" class="help-fab" title="How to play — full rules">?</button>
 <div id="help-overlay" hidden>
@@ -542,6 +586,28 @@
       <h4>Semaphores</h4>
       <p>A counting semaphore <b>S</b> with two atomic operations: <b>P(S)</b> (wait) and <b>V(S)</b> (signal). P decrements S if S &gt; 0 and continues; if S is 0 it blocks and joins the queue, leaving S at 0. V increments S — unless a process is blocked, in which case that process is woken and immediately consumes the unit, so S stays the same. For each operation predict the value of S afterwards. A binary semaphore (S limited to 0/1) behaves like a mutex.</p>
     </details>
+
+    <details class="help-sec"><summary>9 · Lockdown — driving a mutex and semaphores yourself</summary>
+      <p>The sync lab asks you to <i>predict</i> what a primitive does. Lockdown puts you at the controls: a script of threads arrives one request at a time, and you choose the call the controller must make. There are always four candidates:</p>
+      <ul>
+        <li><b>Acquire</b> — <code>lock(m)</code> for a mutex, <code>P(S)</code> for a semaphore. Take a unit if one is free.</li>
+        <li><b>Block</b> — park the thread on the queue because no unit is free.</li>
+        <li><b>Release</b> — <code>unlock(m)</code> / <code>V(S)</code>. Give a unit back; if the queue is not empty it passes straight to the head waiter.</li>
+        <li><b>Refuse</b> — the call is illegal and the OS must raise an error.</li>
+      </ul>
+      <p>The rule you are graded on: <b>a free unit must never sit idle while a thread could take it</b>, and a thread must never be admitted when no unit is free (that is exactly how mutual exclusion breaks).</p>
+
+      <h4>Mutex lock — ownership</h4>
+      <p>Only the <b>owner</b> may unlock. A <code>lock(m)</code> by the thread that already owns it is <b>refused</b>: a plain mutex is not recursive, so it would wait for itself forever. A <code>unlock(m)</code> by a thread that does not own the mutex is also refused.</p>
+
+      <h4>Binary semaphore — no owner</h4>
+      <p>S is only ever 0 or 1, but there is <b>no ownership</b>: the thread that wakes a waiter need not be the one that slept. What still must hold is that a signal cannot invent a permit — you cannot <code>V(S)</code> a unit you never took, or the count drifts above 1.</p>
+
+      <h4>Counting semaphore — N permits</h4>
+      <p>S starts at N (2 or 3 here). Any thread may hold a permit; the pool admits up to N threads at once and queues the rest <b>FIFO</b>. Releasing a permit wakes the oldest waiter and hands the permit over immediately, so the free count does not actually grow while threads are queued.</p>
+
+      <p>Score: <b>70</b> per correct call, <b>+400</b> for a perfect run, <b>+time bonus</b>, <b>−35</b> per wrong call. The hint (−40) names the right call for the current request.</p>
+    </details>
   </div>
 </div>
 </div>
@@ -581,7 +647,7 @@
     </div>
     <div class="about-card">
       <h4>THE MODES</h4>
-      <p><b>8</b> modes: CPU Scheduling, Page Replacement, Disk Scheduling, Memory Allocation, Deadlock Avoidance, Demand Paging, File System Allocation, and Synchronization (critical sections, Peterson's, TSL, mutexes, semaphores).</p>
+      <p><b>9</b> modes: CPU Scheduling, Page Replacement, Disk Scheduling, Memory Allocation, Deadlock Avoidance, Demand Paging, File System Allocation, Synchronization (critical sections, Peterson's, TSL, mutexes, semaphores), and Lockdown — where you drive a mutex, a binary semaphore or a counting semaphore yourself.</p>
     </div>
   </div>
 
@@ -594,6 +660,7 @@
     <tr><td>Virtual memory</td><td>Demand paging, faults, copy-on-write</td><td>Virtual Memory</td></tr>
     <tr><td>File systems</td><td>Contiguous, linked, indexed allocation</td><td>File System</td></tr>
     <tr><td>Process synchronization</td><td>Critical section, Peterson's, TSL, semaphores</td><td>Synchronization</td></tr>
+    <tr><td>Process synchronization</td><td>Mutex locks, binary &amp; counting semaphores</td><td>Lockdown</td></tr>
   </table>
 
   <p class="about-foot">Built for Operating Systems coursework. No accounts, no tracking — your name and USN stay in this browser, and only the leaderboard entry is stored on the class server.</p>
